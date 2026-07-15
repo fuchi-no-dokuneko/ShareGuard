@@ -17,6 +17,7 @@ dependencies {
 
     testImplementation(project(":test-corpus"))
     testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)
     androidTestImplementation(libs.androidx.test.junit)
