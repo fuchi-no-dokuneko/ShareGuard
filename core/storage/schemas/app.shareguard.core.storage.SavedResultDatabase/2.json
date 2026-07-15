@@ -1,0 +1,414 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "3e533868cf963b9e2075ced064e643d4",
+    "entities": [
+      {
+        "tableName": "saved_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`saved_result_id` TEXT NOT NULL, `schema_version` INTEGER NOT NULL, `display_label` TEXT NOT NULL, `output_mode` TEXT NOT NULL, `canonical_revision` INTEGER NOT NULL, `assurance_class` TEXT NOT NULL, `original_verified_assurance` TEXT NOT NULL, `assurance_rationale_summary` TEXT NOT NULL, `verification_state` TEXT NOT NULL, `verification_summary_reference` TEXT, `verification_report_version` INTEGER, `verification_artifact_revision` INTEGER, `verification_statuses` TEXT, `unresolved_finding_count` INTEGER, `retained_source_region_count` INTEGER, `import_wall_clock_millis` INTEGER NOT NULL, `import_monotonic_nanos` INTEGER, `boot_session_reference` TEXT, `import_clock_confidence` TEXT NOT NULL, `persisted_at_wall_clock_millis` INTEGER NOT NULL, `last_integrity_check_at_millis` INTEGER, `content_digest` TEXT NOT NULL, `storage_byte_count` INTEGER NOT NULL, `preview_reference` TEXT, `favourite` INTEGER NOT NULL, `created_by_app_build` TEXT NOT NULL, `migration_state` TEXT NOT NULL, `lifecycle_state` TEXT NOT NULL, `integrity_state` TEXT NOT NULL, `external_export_known` INTEGER NOT NULL, `key_alias` TEXT NOT NULL, `visibility_confirmed` INTEGER NOT NULL, `revalidation_reason_code` TEXT, PRIMARY KEY(`saved_result_id`))",
+        "fields": [
+          {
+            "fieldPath": "savedResultId",
+            "columnName": "saved_result_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schema_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayLabel",
+            "columnName": "display_label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputMode",
+            "columnName": "output_mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canonicalRevision",
+            "columnName": "canonical_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assuranceClass",
+            "columnName": "assurance_class",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalVerifiedAssurance",
+            "columnName": "original_verified_assurance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assuranceRationaleSummary",
+            "columnName": "assurance_rationale_summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verificationState",
+            "columnName": "verification_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verificationSummaryReference",
+            "columnName": "verification_summary_reference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "verificationReportVersion",
+            "columnName": "verification_report_version",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "verificationArtifactRevision",
+            "columnName": "verification_artifact_revision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "verificationStatuses",
+            "columnName": "verification_statuses",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unresolvedFindingCount",
+            "columnName": "unresolved_finding_count",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "retainedSourceRegionCount",
+            "columnName": "retained_source_region_count",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "importWallClockMillis",
+            "columnName": "import_wall_clock_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importMonotonicNanos",
+            "columnName": "import_monotonic_nanos",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "bootSessionReference",
+            "columnName": "boot_session_reference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "importClockConfidence",
+            "columnName": "import_clock_confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "persistedAtWallClockMillis",
+            "columnName": "persisted_at_wall_clock_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastIntegrityCheckAtMillis",
+            "columnName": "last_integrity_check_at_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "contentDigest",
+            "columnName": "content_digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageByteCount",
+            "columnName": "storage_byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previewReference",
+            "columnName": "preview_reference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "favourite",
+            "columnName": "favourite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByAppBuild",
+            "columnName": "created_by_app_build",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "migrationState",
+            "columnName": "migration_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lifecycleState",
+            "columnName": "lifecycle_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "integrityState",
+            "columnName": "integrity_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalExportKnown",
+            "columnName": "external_export_known",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyAlias",
+            "columnName": "key_alias",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visibilityConfirmed",
+            "columnName": "visibility_confirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revalidationReasonCode",
+            "columnName": "revalidation_reason_code",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "saved_result_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_saved_results_lifecycle_state_visibility_confirmed",
+            "unique": false,
+            "columnNames": [
+              "lifecycle_state",
+              "visibility_confirmed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_saved_results_lifecycle_state_visibility_confirmed` ON `${TABLE_NAME}` (`lifecycle_state`, `visibility_confirmed`)"
+          },
+          {
+            "name": "index_saved_results_migration_state",
+            "unique": false,
+            "columnNames": [
+              "migration_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_saved_results_migration_state` ON `${TABLE_NAME}` (`migration_state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "saved_artifacts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`saved_result_id` TEXT NOT NULL, `artifact_kind` TEXT NOT NULL, `artifact_reference` TEXT NOT NULL, `relative_path` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `content_digest` TEXT NOT NULL, `artifact_revision` INTEGER NOT NULL, `byte_count` INTEGER NOT NULL, `retained_region_ids` TEXT NOT NULL, `dependency_types` TEXT NOT NULL, PRIMARY KEY(`saved_result_id`, `artifact_kind`), FOREIGN KEY(`saved_result_id`) REFERENCES `saved_results`(`saved_result_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "savedResultId",
+            "columnName": "saved_result_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artifactKind",
+            "columnName": "artifact_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artifactReference",
+            "columnName": "artifact_reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relativePath",
+            "columnName": "relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentDigest",
+            "columnName": "content_digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artifactRevision",
+            "columnName": "artifact_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteCount",
+            "columnName": "byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retainedRegionIds",
+            "columnName": "retained_region_ids",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dependencyTypes",
+            "columnName": "dependency_types",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "saved_result_id",
+            "artifact_kind"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_saved_artifacts_saved_result_id",
+            "unique": false,
+            "columnNames": [
+              "saved_result_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_saved_artifacts_saved_result_id` ON `${TABLE_NAME}` (`saved_result_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "saved_results",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "saved_result_id"
+            ],
+            "referencedColumns": [
+              "saved_result_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "saved_previews",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`preview_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `saved_result_id` TEXT NOT NULL, `preview_reference` TEXT NOT NULL, `relative_path` TEXT NOT NULL, `source_artifact_kind` TEXT NOT NULL, `source_artifact_digest` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `byte_count` INTEGER NOT NULL, FOREIGN KEY(`saved_result_id`) REFERENCES `saved_results`(`saved_result_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "previewId",
+            "columnName": "preview_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedResultId",
+            "columnName": "saved_result_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "previewReference",
+            "columnName": "preview_reference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relativePath",
+            "columnName": "relative_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceArtifactKind",
+            "columnName": "source_artifact_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceArtifactDigest",
+            "columnName": "source_artifact_digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteCount",
+            "columnName": "byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "preview_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_saved_previews_saved_result_id",
+            "unique": true,
+            "columnNames": [
+              "saved_result_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_saved_previews_saved_result_id` ON `${TABLE_NAME}` (`saved_result_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "saved_results",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "saved_result_id"
+            ],
+            "referencedColumns": [
+              "saved_result_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3e533868cf963b9e2075ced064e643d4')"
+    ]
+  }
+}
