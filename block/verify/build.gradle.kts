@@ -20,5 +20,6 @@ dependencies {
     testImplementation(libs.junit4)
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)
+    testImplementation(libs.okhttp)
     androidTestImplementation(libs.androidx.test.junit)
 }
