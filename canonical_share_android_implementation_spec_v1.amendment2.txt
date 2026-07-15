@@ -1,0 +1,477 @@
+====================================================================================================
+CANONICAL SHARE — ANDROID IMPLEMENTATION SPECIFICATION
+AMENDMENT 2: IMPLEMENTABILITY CLARIFICATIONS AND LOCAL-ANDROID EXECUTION BOUNDARIES
+====================================================================================================
+
+Amendment file:
+canonical_share_android_implementation_spec_v1.amendment2.txt
+
+Amendment version:
+2.0
+
+Amendment date:
+2026-07-15
+
+Applies to:
+1. Canonical Share — Android Sequential Privacy-Normalization Pipeline, Draft v1.0
+2. Amendment 1 — Persistent Verified Results, Result Management, and Elapsed-Since-Import Awareness
+
+Purpose:
+This amendment converts identified platform limitations into explicit, implementable Android requirements.
+It preserves the local-first privacy model while removing claims that an ordinary Android application
+cannot prove.
+
+Precedence:
+Where this amendment conflicts with Amendment 1 or the baseline specification, this amendment controls.
+Where Amendment 1 conflicts with the baseline specification, Amendment 1 controls.
+All unaffected requirements remain in force.
+
+Terminology added:
+- Logical Deletion: removal of all app-addressable records, files, indexes, previews, keys and caches.
+- Managed Artifact: the authoritative artifact still stored and controlled by Canonical Share.
+- External Copy: any exported, copied, shared or externally edited artifact outside app management.
+- Reference Timer: an advisory elapsed-duration display based on ordinary Android system time sources.
+- Diagnostic Trace Event: a content-free event emitted for implementation verification or debugging.
+- Bounded Random Delay: a short locally generated delay whose exact duration is not persisted or claimed
+  as a security proof.
+
+
+====================================================================================================
+B1. IMPLEMENTATION LANGUAGE AND UI FRAMEWORK
+====================================================================================================
+
+B1.1 Language decision
+
+The Android application may and should use Kotlin for the application layer and Jetpack Compose UI.
+
+Java remains permitted for:
+- existing compatible libraries;
+- isolated processing modules;
+- parsers;
+- image-processing components;
+- cryptographic wrappers;
+- test utilities;
+- other modules where Java interoperability is appropriate.
+
+The project shall not require the Compose UI layer to be written in Java.
+
+B1.2 Architecture rule
+
+Kotlin and Java modules shall communicate through explicit typed interfaces.
+Java interoperability shall not weaken null-safety, immutable execution-context rules, verification
+boundaries or cancellation behaviour.
+
+B1.3 Superseded baseline wording
+
+The baseline statement “Primary implementation language: JAVA” is replaced with:
+
+“Primary application language: Kotlin. Java-compatible modules are permitted where appropriate.”
+
+The target UI framework remains Jetpack Compose.
+
+
+====================================================================================================
+B2. DELETION CLAIMS AND FAILURE BOUNDARY
+====================================================================================================
+
+B2.1 Logical deletion
+
+“Delete permanently” in user-facing and normative requirements means logical deletion from all storage
+locations addressable by the application.
+
+The deletion workflow shall remove:
+- Saved Result metadata;
+- managed artifact files;
+- previews;
+- search-index entries;
+- verification summaries;
+- display labels;
+- timing metadata;
+- associated share-cache copies;
+- per-result encryption keys, where used;
+- pending migration or recovery references.
+
+B2.2 No physical-sanitization claim
+
+The application shall not claim:
+- verified overwriting of every physical flash cell;
+- control over device-controller remapping;
+- control over flash wear levelling;
+- forensic sanitization of inaccessible storage remnants.
+
+User-facing wording shall distinguish removal from the app from physical media sanitization.
+
+B2.3 Failure handling
+
+When deletion is partial:
+- the item shall immediately stop appearing as a normal shareable Saved Result;
+- remaining references shall enter a deletion-pending lifecycle state;
+- retry shall be idempotent;
+- diagnostics shall not expose content or sensitive paths;
+- verified sharing shall remain blocked.
+
+Where per-result encryption is implemented, deletion of the protected key is part of logical deletion but
+does not authorize a physical-erasure claim.
+
+
+====================================================================================================
+B3. REFERENCE TIMER USING NORMAL SYSTEM DATE AND TIME
+====================================================================================================
+
+B3.1 Product decision
+
+Elapsed Since Import is a reference display only.
+It is not an anti-hacking feature, anonymity control, forensic clock or proof against timing correlation.
+
+B3.2 Accepted clock model
+
+The application may use:
+- the normal Android wall-clock date and time for persistence and restored display;
+- a monotonic clock while available during the same device boot.
+
+After reboot, process restoration or loss of the monotonic reference, ordinary system date and time are
+sufficient for the reference display.
+
+B3.3 Clock anomalies
+
+Manual clock changes, automatic network time adjustment, time-zone changes and daylight-saving
+transitions may reduce accuracy.
+
+The implementation shall:
+- prevent a negative displayed duration;
+- use a neutral clock-confidence status internally;
+- continue displaying a best-effort reference value;
+- avoid blocking sharing solely because clock confidence is reduced;
+- avoid presenting the value as trusted security evidence.
+
+B3.4 Revised user wording
+
+The detail screen shall explain:
+
+“Time since import is an approximate reference based on this device’s system clock. It is not a security
+guarantee and may change when the device clock changes.”
+
+B3.5 Revised acceptance meaning
+
+Cross-restart timer tests verify restoration, non-negative display and honest confidence handling.
+They do not require proof of exact elapsed real time after arbitrary system-clock modification.
+
+
+====================================================================================================
+B4. ASSURANCE BOUNDARY FOR EXTERNAL COPIES
+====================================================================================================
+
+B4.1 Managed assurance scope
+
+Verification and assurance apply only to the exact Managed Artifact bytes or text representation currently
+held and controlled by Canonical Share.
+
+B4.2 External copies
+
+After export or sharing, an External Copy is outside the managed assurance boundary.
+
+The application is not required to:
+- monitor every external destination;
+- detect edits made by another application;
+- track copies made by the recipient;
+- revoke or downgrade a badge displayed by an unrelated application;
+- confirm that an external copy remains byte-identical.
+
+B4.3 Re-entry
+
+An External Copy may regain a new assurance assessment only after it is re-imported and processed through
+the applicable validation and verification pipeline.
+
+B4.4 UI statement
+
+Export and share surfaces shall state that the verified status applies to the copy generated at export
+time and that later external edits are not monitored.
+
+
+====================================================================================================
+B5. SHARE COMPLETION AND CACHE CLEANUP
+====================================================================================================
+
+B5.1 Platform boundary
+
+Canonical Share shall not claim to know exactly when an arbitrary receiving application:
+- opens the shared stream;
+- finishes reading;
+- creates its own copy;
+- completes its business operation;
+- no longer requires temporary permission.
+
+B5.2 Managed sharing
+
+Where practical, sharing shall expose a read-only content URI backed by the authoritative Managed Artifact
+rather than creating an unnecessary duplicate permanent file.
+
+When a temporary share derivative is required:
+- it shall be app-private;
+- it shall have a conservative expiry policy;
+- cleanup shall be best effort and retryable;
+- expiry shall not be described as proof that the receiver finished reading;
+- stale-cache sweeps shall remove derivatives no longer needed by the app.
+
+B5.3 Event privacy
+
+The app shall not permanently record destination identity, recipient information or exact completion
+status.
+
+A chooser callback or activity result may be used for transient UI flow but shall not be interpreted as
+receiver-consumption proof.
+
+
+====================================================================================================
+B6. PROVIDER IMPORT SNAPSHOT AND BOUNDED RANDOM DELAY
+====================================================================================================
+
+B6.1 Authoritative import model
+
+For a third-party content URI, the application shall perform a bounded copy into app-private storage.
+The resulting internal copy becomes the authoritative immutable session source.
+
+The app shall not claim that it can prove the provider’s underlying data was stable before or during
+delivery.
+
+B6.2 Bounded random delay
+
+After the provider copy completes and before the source is accepted as sealed, the implementation may
+apply a short, bounded, locally generated random delay.
+
+After that delay, the app shall reopen the internal copy and verify:
+- readable state;
+- expected byte length;
+- content digest;
+- approved internal location.
+
+The delay:
+- shall not freeze the UI thread;
+- shall be cancellable with the session;
+- shall not require network access;
+- shall not be persisted as content metadata;
+- shall not be marketed as provider attestation, watermark removal or anonymity protection.
+
+B6.3 Failure rule
+
+A mismatch in the internal copy blocks acceptance.
+A stable internal copy does not prove that the external provider itself was immutable.
+
+B6.4 Share timing option
+
+The same bounded-delay utility may be reused before opening the system Sharesheet as optional local timing
+jitter. It shall remain advisory and shall not create a guaranteed anti-correlation claim.
+
+
+====================================================================================================
+B7. CONTENT-FREE TRACE EVENTS FOR DEBUGGING
+====================================================================================================
+
+B7.1 Diagnostic decision
+
+A structured Diagnostic Trace Event is sufficient for implementation debugging and execution-flow
+verification, provided that it contains no source or output content.
+
+B7.2 Required trace coverage
+
+In debug or explicitly approved diagnostic builds, each block phase and each app-applied transformation
+shall emit a trace event linked to:
+- a session-local event identifier;
+- block identifier and version;
+- phase or transformation category;
+- execution revision;
+- canonical revision where applicable;
+- success, review-required, recoverable-failure or fatal-failure class;
+- a content-free reason code.
+
+B7.3 Prohibited trace data
+
+Trace events shall not contain:
+- source text;
+- output text;
+- image bytes;
+- OCR text;
+- raw before-values or after-values;
+- filenames;
+- content URIs;
+- internal filesystem paths;
+- display labels;
+- URL values;
+- import timestamps linked to content;
+- share destinations;
+- recipient details;
+- encryption keys or digests usable as stable cross-session identifiers.
+
+B7.4 Production behaviour
+
+Persistent diagnostic tracing shall be disabled by default in production.
+Temporary in-memory traces may be used for local troubleshooting and shall be cleared with the session.
+
+B7.5 Semantic limitation
+
+Trace coverage proves which transformations the application executed.
+It does not prove that software can determine every possible natural-language semantic consequence.
+
+Every app-applied transformation shall still be represented in the change ledger, and transformations
+with possible semantic impact shall remain reviewable.
+
+
+====================================================================================================
+B8. SOURCE DEPENDENCY MAP SCOPE
+====================================================================================================
+
+B8.1 Implementable completeness rule
+
+The source dependency map shall completely cover dependencies explicitly introduced, copied, retained or
+declared by defined pipeline blocks.
+
+It shall identify, where applicable:
+- retained source-pixel regions;
+- OCR-derived text;
+- source-derived layout decisions;
+- source metadata intentionally retained;
+- bundled assets;
+- renderer-generated primitives;
+- user decisions;
+- canonical-document revisions.
+
+B8.2 Unknown implementation dependencies
+
+The application shall not claim complete knowledge of every hidden causal dependency inside:
+- device codecs;
+- operating-system internals;
+- native libraries;
+- font shaping engines;
+- hardware behaviour;
+- undocumented third-party implementation details.
+
+Such uncertainty shall be stated as an assurance limitation rather than silently treated as absent.
+
+B8.3 Acceptance wording
+
+A dependency-map test passes when all dependency types defined by the pipeline and exercised by the test
+fixture are represented correctly.
+It does not require proof that no unknown platform-level dependency exists.
+
+
+====================================================================================================
+B9. OPERATIONAL DEFINITION OF DURABLE WRITE
+====================================================================================================
+
+B9.1 Definition
+
+For this product, “durably written” means that:
+- artifact writing completed without reported error;
+- applicable file flush or synchronization operations completed;
+- metadata committed through the selected transactional database mechanism;
+- the committed artifact was reopened from its final app-private location;
+- its digest and canonical revision matched the committed record;
+- the item became visible only after the commit protocol completed.
+
+B9.2 Failure boundary
+
+This definition does not guarantee survival against:
+- physical storage failure;
+- defective firmware;
+- operating-system corruption;
+- catastrophic power or hardware loss beyond platform guarantees.
+
+B9.3 Transaction recovery
+
+The persistent integrity sweep shall detect:
+- orphan files;
+- orphan records;
+- incomplete transactions;
+- reopen failures;
+- digest mismatch;
+- migration mismatch.
+
+Affected items shall be quarantined from verified sharing until repaired, revalidated or deleted.
+
+
+====================================================================================================
+B10. BASELINE AND AMENDMENT 1 CONSISTENCY
+====================================================================================================
+
+B10.1 Automatic Saved Result
+
+After mandatory verification, automatic creation of a Saved Result remains the controlling product
+behaviour.
+
+B10.2 Meaning of explicit save
+
+The baseline “Explicit Save” screen and block are reinterpreted as:
+
+“Export a user-selected copy to platform storage.”
+
+They shall not be implemented as a second required in-app persistence action.
+
+B10.3 Session cleanup separation
+
+Clearing a transient session shall not delete a successfully committed Saved Result.
+Deleting a Saved Result shall not require retaining the original session.
+
+B10.4 Preset completion order
+
+Every preset that produces a managed final artifact shall end with this logical order:
+- final serialization;
+- mandatory final verification;
+- assurance computation;
+- reopen and digest check;
+- Saved Result transactional commit;
+- managed share or user-selected export preparation.
+
+No content-transforming block may execute after final verification without invalidating that verification.
+
+
+====================================================================================================
+B11. ACCEPTANCE CRITERIA
+====================================================================================================
+
+AC-A2-001  The Compose application layer is implemented in Kotlin; Java modules may interoperate through
+           typed interfaces.
+
+AC-A2-002  Deletion removes all app-addressable item data and keys but does not claim physical flash
+           sanitization.
+
+AC-A2-003  Elapsed Since Import remains a non-negative advisory reference after process restoration,
+           reboot and ordinary system-clock changes.
+
+AC-A2-004  Reduced clock confidence does not automatically block sharing or promote a security claim.
+
+AC-A2-005  Verification badges apply only to Managed Artifact bytes or text controlled by the app.
+
+AC-A2-006  An exported or externally edited copy is not silently treated as still managed and verified.
+
+AC-A2-007  Share-cache cleanup uses a documented best-effort policy and does not claim knowledge that a
+           receiving application completed reading.
+
+AC-A2-008  Provider content is copied into an authoritative internal snapshot before processing.
+
+AC-A2-009  A bounded random delay, where enabled, runs off the UI thread, is cancellable and creates no
+           anonymity or provider-stability claim.
+
+AC-A2-010  Debug trace events cover block execution and app-applied transformations without recording
+           content, sensitive paths, labels, destinations or stable cross-session identifiers.
+
+AC-A2-011  Every app-applied transformation has a change-ledger entry and possible semantic impact remains
+           reviewable.
+
+AC-A2-012  The dependency map covers all dependencies defined and exercised by pipeline blocks, while
+           unknown platform-level dependencies remain explicit limitations.
+
+AC-A2-013  A Saved Result becomes visible only after the operational durable-write protocol completes.
+
+AC-A2-014  Crash recovery and integrity sweep quarantine incomplete, mismatched or orphaned records.
+
+AC-A2-015  The baseline Explicit Save flow is implemented as export of a user-selected copy, not as a
+           second mandatory internal save.
+
+
+====================================================================================================
+APPENDIX C — CODEX GOAL COMMAND
+====================================================================================================
+
+The following command contains exactly 200 English words:
+
+Use the three specification files in this repository as the sole product authority: canonical_share_android_implementation_spec_v1(2).txt, canonical_share_android_implementation_spec_v1.ammend(1).txt, and canonical_share_android_implementation_spec_v1.amendment2.txt. Read them completely, resolve conflicts by applying Amendment 2 first, Amendment 1 second, and the baseline last. Build a local-first Android application using Kotlin and Jetpack Compose, with Java-compatible modules allowed where useful. Implement the sequence-only pipeline, verified result persistence, Saved Results management, advisory elapsed-since-import display, managed sharing, bounded random share jitter, content-free debug tracing, logical deletion, integrity checks, and transactional storage. Do not claim physical flash sanitization, guaranteed anonymity, exact elapsed time after clock changes, provider stability, receiver consumption completion, or integrity of exported external copies. Keep source material transient and app-private. Disable cloud backup by default. Use Android platform APIs and maintained libraries rather than custom substitutes. Add unit, instrumentation, migration, process-death, reboot, clock-change, corruption, deletion, and sharing tests. Record every application transformation in the change ledger and expose possible semantic impact for review. Produce an implementation plan before modifying code, then implement incrementally. At completion, report files changed, tests executed, unresolved limitations, and every requirement that remains blocked by platform constraints. Do not silently weaken mandatory verification or security boundaries. Preserve deterministic revisions and document assumptions beside affected implementation decisions.

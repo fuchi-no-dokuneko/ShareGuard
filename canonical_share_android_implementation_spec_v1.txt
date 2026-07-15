@@ -1,0 +1,5773 @@
+====================================================================================================
+DOCUMENT CONTROL
+====================================================================================================
+Document title:
+Canonical Share — Android Sequential Privacy-Normalization Pipeline
+Detailed Product, UX, Block, Verification and Agent-Implementation Specification
+
+Document version:
+Draft v1.0
+
+Document date:
+2026-07-15
+
+Primary audience:
+- Product owner
+- Android architects
+- Coding agents
+- Security reviewers
+- QA and adversarial-testing engineers
+- UX designers
+
+Primary implementation language:
+JAVA
+
+Target UI framework:
+Jetpack Compose
+
+Core product rule:
+The application accepts exactly one primary input item per session:
+- text, or
+- image.
+
+The execution model is a typed, ordered, sequence-only pipeline.
+There is no free graph, no branch connector, no loop connector and no arbitrary node-to-node wiring in the user interface.
+
+The pipeline may build an Output Bundle containing:
+- canonical text;
+- a rebuilt image;
+- a verification report;
+- share-ready Android objects.
+
+This does not violate the sequence-only rule because each block consumes and returns one Execution Context.
+Blocks append or replace typed artifacts inside that context in a deterministic order.
+
+Terminology:
+- Source: the untrusted text or image received by the app.
+- Finding: a detected condition that may carry identity or provenance information.
+- Change: a transformation actually applied by the app.
+- Canonical Document: a semantic intermediate representation that does not inherit source bytes or source pixels by default.
+- Rebuilt Image: a newly rendered image generated from the Canonical Document.
+- Appearance-Preserving Image: a transformed derivative that still depends on source pixels.
+- Assurance: a constrained claim about what processing occurred; it is not proof that every unknown watermark was removed.
+- Review Gate: a mandatory user decision point when automatic processing could alter meaning.
+- Verification Gate: a post-output check that reopens and inspects the final artifact.
+
+
+====================================================================================================
+1. EXECUTIVE PRODUCT DECISION
+====================================================================================================
+Decision:
+Use a ComfyUI-inspired block vocabulary and execution visibility, but do not copy the unrestricted node-canvas interaction.
+
+Approved interaction model:
+- vertical ordered block list;
+- one source;
+- one execution cursor;
+- typed block compatibility;
+- mandatory security blocks;
+- optional policy blocks;
+- no cycles;
+- no user-created ports;
+- no parallel branches;
+- no hidden execution path;
+- a visible final assurance result.
+
+Why sequence-only is appropriate:
+1. Security order is predictable.
+2. Every output has a reproducible processing history.
+3. Coding agents can implement one block at a time.
+4. Test cases can assert the exact block order.
+5. Mandatory controls cannot be bypassed by accidental graph rewiring.
+6. Mobile UX remains understandable.
+7. Workflow migrations are simpler.
+8. Support reports can identify the exact block and version that created a change.
+9. A failed block has a single predecessor and successor.
+10. The app can explain, in plain language, what happened to the content.
+
+The product should not be marketed as:
+- guaranteed watermark removal;
+- guaranteed anonymity;
+- complete anti-forensics;
+- protection against platform account, network, timing or behavioural correlation;
+- proof that the source cannot be identified.
+
+Recommended positioning:
+“Convert shared text or screenshots into a newly normalized representation, reducing inherited formatting, metadata, Unicode, URL, font and pixel-level provenance signals.”
+
+Primary high-assurance outputs:
+- Canonical Text
+- Rebuilt Image
+
+Experimental lower-assurance output:
+- Appearance-Preserving Image
+
+
+====================================================================================================
+2. PRODUCT GOALS, NON-GOALS AND TRUST BOUNDARY
+====================================================================================================
+2.1 Goals
+
+G-001  Accept text from Android sharing, paste and direct entry.
+G-002  Accept one image from Android sharing or the system Photo Picker.
+G-003  Show the detected input type prominently.
+G-004  Let the user choose Text, Rebuilt Image, Both, or an explicitly lower-assurance appearance-preserving output.
+G-005  Expose processing as an ordered set of inspectable blocks.
+G-006  Normalize Unicode, whitespace, punctuation, script-confusables and URLs.
+G-007  Extract image text and layout without treating OCR as automatically correct.
+G-008  Rebuild images on a fresh canvas with bundled assets and controlled serialization.
+G-009  Avoid carrying source metadata into outputs.
+G-010  Reopen final outputs and verify their actual contents.
+G-011  Keep processing local by default.
+G-012  Avoid stable installation-specific random signatures.
+G-013  Delete transient source and intermediate artifacts.
+G-014  Produce an understandable change report.
+G-015  Make every security claim traceable to executed blocks and verification results.
+
+2.2 Non-goals
+
+NG-001  Preventing a destination app from identifying the sender account.
+NG-002  Preventing network, device, timing, behavioural or social-graph correlation.
+NG-003  Reconstructing arbitrary photographs with perfect visual fidelity.
+NG-004  Reliably detecting every proprietary watermark.
+NG-005  Proving the absence of hidden information.
+NG-006  Preserving every original style while claiming high assurance.
+NG-007  Acting as a secure whistleblowing transport or anonymous network.
+NG-008  Replacing legal, operational or organisational whistleblower protections.
+NG-009  Uploading private content to a cloud AI service in the default build.
+NG-010  Automatically changing ambiguous text without review.
+
+2.3 Trust boundary
+
+Trusted:
+- the app’s signed code;
+- bundled fonts and rendering assets;
+- bundled normalization tables or version-pinned libraries;
+- app-internal session storage;
+- the pipeline engine;
+- post-output verification code.
+
+Untrusted:
+- incoming Intent extras;
+- MIME declarations;
+- content-provider filenames;
+- content-provider metadata;
+- source image encoders;
+- source text spans;
+- HTML clipboard variants;
+- OCR output;
+- decoded QR or barcode values;
+- URLs;
+- user-selected optional plug-ins;
+- third-party share targets;
+- all source bytes and pixels.
+
+Partially trusted:
+- Android framework decoding;
+- library parsers;
+- platform font and shaping behaviour;
+- system locale;
+- device-specific image codecs.
+
+Controls must minimize dependence on partially trusted components for high-assurance output.
+
+
+====================================================================================================
+3. THREAT MODEL
+====================================================================================================
+3.1 Adversary model
+
+The adversary controls platform A and can provide different users with slightly different representations of apparently identical content. The adversary later obtains one or more shared copies from platform B and correlates them with candidate users.
+
+The adversary may combine many weak observations rather than rely on a single visible marker.
+
+Conceptual scoring model:
+
+    Score(user) = sum over observations of evidence contributed by each retained feature.
+
+The app’s primary defence is convergence:
+Different source representations with the same intended visible meaning should produce the same, or substantially more similar, canonical output.
+
+3.2 Threat channels
+
+TH-FONT-001
+Per-glyph font outline changes, kerning differences, hinting differences, anti-aliasing patterns or one-pixel character variations.
+
+TH-SPATIAL-001
+Small repeated blocks, rotation-synchronised patterns, tiling, alignment markers, local texture patterns or padding-dependent signals.
+
+TH-FREQ-001
+Signals embedded in frequency-domain coefficients or robust combinations of spatial and frequency domains.
+
+TH-LSB-001
+Least-significant-bit or low-amplitude colour-channel differences, possibly combined with robust higher-level patterns.
+
+TH-ALPHA-001
+Transparent or near-transparent alpha-channel content.
+
+TH-UNICODE-001
+Zero-width characters, default-ignorable characters, bidi controls, variation selectors, combining marks or unusual whitespace.
+
+TH-CONFUSABLE-001
+Latin, Greek, Cyrillic or other visually confusable characters; full-width and half-width variants; compatibility forms.
+
+TH-PUNCT-001
+Dash, quote, apostrophe, ellipsis, comma, colon, spacing and line-ending variants.
+
+TH-META-001
+EXIF, XMP, ICC, PNG chunks, WebP chunks, embedded thumbnails, encoder identifiers, timestamps, filenames and application fields.
+
+TH-URL-001
+Query parameters, fragments, path tokens, userinfo, personalised subdomains, redirect tokens, tracking parameters or high-entropy identifiers.
+
+TH-LAYOUT-001
+Different line wrapping, paragraph breaks, list ordering, indentation, card dimensions, bubble geometry or element spacing.
+
+TH-SEMANTIC-001
+Synonym choice, sentence order, punctuation style, intentionally altered spelling, platform-personalised content or generated paraphrases.
+
+TH-BARCODE-001
+QR codes or barcodes containing user-specific URLs, tokens or identifiers.
+
+TH-REGION-001
+Avatars, map tiles, notification icons, timestamps, account names, UI state, unique background content or embedded photographs.
+
+TH-FILE-001
+Container ordering, compression tables, chunk ordering, encoder fingerprints, colour profiles, quantisation patterns or file structure.
+
+TH-CROSS-SAMPLE-001
+Accumulation of multiple weak indicators across repeated captures or shares.
+
+3.3 Threat-to-output expectations
+
+Canonical Text:
+- strongly severs source font, pixel, alpha, frequency and image-container channels;
+- can normalize Unicode, punctuation and URL channels;
+- may retain semantic personalization, wording, ordering and visible account data;
+- depends on correct extraction and review.
+
+Rebuilt Image:
+- strongly severs source text glyph pixels when all text is redrawn;
+- strongly severs source image container metadata;
+- can sever source layout only when using canonical layout rather than exact geometry;
+- may retain source pixels in user-approved regions;
+- may retain semantic personalization.
+
+Appearance-Preserving Image:
+- may weaken simple metadata, alpha, LSB and pixel-grid signals;
+- cannot claim reliable removal of robust watermarking;
+- must be labelled lower assurance.
+
+3.4 Security claim rule
+
+No block is allowed to emit “safe”, “anonymous” or “watermark removed”.
+
+Allowed language:
+- source metadata was not copied;
+- final output was re-scanned;
+- text was serialized from a canonical representation;
+- text regions were rendered with the bundled renderer;
+- specified URL components were removed;
+- specified unresolved findings remain;
+- some output regions still depend on source pixels.
+
+
+====================================================================================================
+4. ASSURANCE MODEL
+====================================================================================================
+The assurance class is computed by the pipeline. The user cannot manually promote it.
+
+AS-0  Unverified
+Conditions:
+- output has not completed all required verification blocks;
+- a verification block failed;
+- output was externally edited after generation;
+- source dependency information is missing.
+
+UI:
+Red status.
+Sharing may be allowed only after explicit acknowledgement.
+No privacy claim is shown.
+
+AS-1  Re-encoded Derivative
+Conditions:
+- final file was newly encoded;
+- metadata was re-scanned;
+- substantial source-pixel dependency remains.
+
+UI:
+“Source pixels retained.”
+Suitable only as a convenience transformation.
+
+AS-2  Reviewed Canonical Text
+Conditions:
+- final text came from the Canonical Document;
+- Unicode and URL final scans passed;
+- unresolved text ambiguities were reviewed or explicitly retained.
+
+UI:
+“Canonical text generated and verified.”
+
+AS-3  Rebuilt Image with Source Regions
+Conditions:
+- text and UI primitives were freshly rendered;
+- some image regions were retained from the source;
+- every retained region is listed in the report;
+- metadata and OCR round-trip checks completed.
+
+UI:
+“Image rebuilt; listed source regions retained.”
+
+AS-4  Fully Rebuilt Textual Image
+Conditions:
+- all visible text came from canonical text;
+- all UI primitives came from bundled renderer assets;
+- no source image region is retained;
+- output was reopened, metadata-scanned and OCR round-trip checked;
+- unresolved findings are absent or explicitly accepted.
+
+UI:
+“Fully rebuilt from reviewed content.”
+
+Assurance must be downgraded when:
+- a source pixel region is added;
+- an unknown optional block modifies output after verification;
+- an external editor changes the artifact;
+- final re-scan fails;
+- OCR round-trip diverges from approved canonical text;
+- a mandatory block is skipped due to failure.
+
+
+====================================================================================================
+5. UX INFORMATION ARCHITECTURE
+====================================================================================================
+Primary navigation:
+1. New Session
+2. Workflow
+3. Review
+4. Output
+5. Report
+6. Presets
+7. Settings
+8. About and Threat Model
+
+The normal user flow should not require visiting Presets, Settings or the detailed Report.
+
+Persistent top status bar:
+- Input badge: TEXT or IMAGE
+- Output badge: TEXT, REBUILT IMAGE, BOTH or DERIVATIVE IMAGE
+- Assurance status: pending until verification
+- Session-local processing label
+- Clear Session action
+
+Primary screens:
+
+UX-SCR-001  Entry
+UX-SCR-002  Text Input
+UX-SCR-003  Image Input Preview
+UX-SCR-004  Output Choice
+UX-SCR-005  Preset Choice
+UX-SCR-006  Sequential Workflow
+UX-SCR-007  Block Detail
+UX-SCR-008  Finding Review
+UX-SCR-009  Character Review
+UX-SCR-010  URL Review
+UX-SCR-011  Layout Review
+UX-SCR-012  Image Region Review
+UX-SCR-013  Output Preview
+UX-SCR-014  Verification Report
+UX-SCR-015  Android Share
+UX-SCR-016  Explicit Save
+UX-SCR-017  Session Cleanup
+UX-SCR-018  Workflow Preset Editor
+UX-SCR-019  Threat Coverage
+UX-SCR-020  Error Recovery
+
+Global UX principles:
+- Always show whether the current representation is Source, Canonical or Output.
+- Never use a green check mark before post-output verification.
+- Every destructive semantic change must have Before and After.
+- Every low-confidence automatic decision must be reversible before export.
+- Do not show technical block IDs as the only label; show ID and plain-language name.
+- Do not force users to understand image-frequency terminology.
+- Keep expert details behind disclosure controls.
+- Make source-pixel retention visible as an overlay.
+- Separate “detected” from “changed”.
+- Separate “changed” from “verified”.
+- Separate “verified processing” from “guaranteed anonymity”.
+
+
+====================================================================================================
+6. DETAILED SCREEN SPECIFICATION
+====================================================================================================
+UX-SCR-001 — Entry
+
+Purpose:
+Start a session without asking for broad storage permission.
+
+Layout:
+- Product title and one-sentence scope.
+- Primary button: Paste or enter text.
+- Primary button: Choose image.
+- Passive instruction: Content can also be shared to the app from another Android app.
+- Privacy statement: Processing is local in the default build.
+- Recent-session history is absent by default.
+- Threat model link.
+
+Behaviour:
+- Incoming Android share bypasses this screen and enters import validation.
+- If both text and image are supplied by a malformed Intent, show a source-choice gate rather than silently choosing.
+- If multiple images are supplied, MVP rejects the session with a clear single-input explanation.
+- Clear clipboard reference immediately after copying into session memory.
+
+UX-SCR-002 — Text Input
+
+Layout:
+- Large plain-text editor.
+- Code-point warning indicator.
+- “Treat selected text as intentional language” action for multilingual content.
+- Output selector in the header.
+- Continue button.
+
+Rules:
+- Rich text is converted to plain text on import.
+- Hidden characters are not silently removed at entry; they are highlighted in Review.
+- Provide a reveal-control mode showing symbols for spaces, line endings and invisible characters.
+- Do not auto-open external URLs.
+
+UX-SCR-003 — Image Input Preview
+
+Layout:
+- Image preview.
+- File format as detected from signature.
+- Pixel dimensions as detected.
+- Source metadata count.
+- “Source is untrusted” label.
+- Output selector.
+- Continue button.
+
+Rules:
+- Do not display untrusted filename as the primary title.
+- Do not load full-resolution bitmap merely to draw a thumbnail.
+- Orientation preview must match the eventual decoded orientation.
+- Animated formats are either rejected in MVP or flattened with an explicit warning.
+
+UX-SCR-004 — Output Choice
+
+Options:
+A. Canonical Text
+B. Rebuilt Image
+C. Both
+D. Appearance-Preserving Image — Experimental
+
+Each option shows:
+- what it preserves;
+- what it discards;
+- expected review burden;
+- assurance ceiling.
+
+The default for text input is Canonical Text.
+The default for image input that is mostly text is Rebuilt Image.
+The app may recommend an output but must not hide alternatives.
+
+UX-SCR-005 — Preset Choice
+
+Presets:
+- Balanced
+- Strict Text
+- Strict URL
+- Full Reconstruction
+- Preserve Layout
+- Experimental Derivative
+
+A preset is a versioned ordered list of blocks and settings.
+Preset cards show:
+- intended content type;
+- number of mandatory review categories;
+- whether any source pixels can remain;
+- whether URLs retain path/query;
+- expected output type.
+
+UX-SCR-006 — Sequential Workflow
+
+Layout:
+- Vertical list.
+- A single execution line connects cards.
+- No canvas panning.
+- No arbitrary wires.
+- Reorder handles only appear in Advanced mode.
+- Header shows Input → Output.
+- Footer shows Run, Pause/Cancel, Review and Export states.
+
+Block card collapsed fields:
+- Block ID
+- Plain-language name
+- status;
+- findings count;
+- changes count;
+- warning count;
+- mandatory or optional;
+- input and output type icons.
+
+Block card states:
+WAITING
+READY
+RUNNING
+REVIEW_REQUIRED
+BLOCKED
+DONE_NO_CHANGE
+DONE_CHANGED
+SKIPPED_BY_POLICY
+FAILED_RECOVERABLE
+FAILED_FATAL
+INVALIDATED
+
+Rules:
+- A downstream setting change invalidates only affected later blocks.
+- An upstream content change invalidates every dependent later block.
+- Review-required halts execution before semantic output is finalized.
+- Mandatory blocks cannot be deleted.
+- Optional block disablement immediately updates assurance ceiling.
+
+UX-SCR-007 — Block Detail
+
+Tabs:
+1. Purpose
+2. Findings
+3. Changes
+4. Settings
+5. Verification
+6. Technical details
+
+Purpose:
+Describe the exact threat channel handled and the limits.
+
+Findings:
+Show original location, category, severity and confidence without implying guilt.
+
+Changes:
+Show before/after and a revert control where safe.
+
+Settings:
+Use constrained enums, not arbitrary scripts.
+
+Verification:
+Show what independent check will confirm the action.
+
+Technical details:
+Library version, block version, execution duration, input/output hashes stored only for the session, and errors. Never show sensitive raw data in logs.
+
+UX-SCR-008 — Finding Review
+
+Group findings by user decision:
+- Meaning may change.
+- Link may stop working.
+- OCR is ambiguous.
+- Source pixels would remain.
+- Hidden formatting was found.
+- Unknown data was found.
+- No safe automatic rule exists.
+
+Each review item supports:
+- accept proposed change;
+- retain source meaning;
+- manually edit;
+- mark as expected language;
+- exclude region;
+- view surrounding context.
+
+Bulk actions are allowed only for homogeneous findings with the same rule.
+
+UX-SCR-009 — Character Review
+
+Display:
+- visual glyph;
+- Unicode name;
+- code point;
+- script;
+- neighbouring characters;
+- suggested canonical form;
+- whether OCR engines disagreed;
+- confusable skeleton result;
+- impact on URLs or identifiers.
+
+Never replace confusable characters globally without language policy.
+
+UX-SCR-010 — URL Review
+
+Display:
+- original display text;
+- parsed scheme;
+- host;
+- registrable domain;
+- subdomain;
+- path;
+- query;
+- fragment;
+- userinfo;
+- suspected high-entropy components;
+- cleaned result;
+- predicted functionality impact.
+
+Actions:
+- keep full URL;
+- remove known tracking fields;
+- remove all query and fragment;
+- keep origin only;
+- convert to non-clickable domain text;
+- remove URL entirely;
+- manually edit.
+
+UX-SCR-011 — Layout Review
+
+Display:
+- reading order numbers;
+- OCR block boxes;
+- line groups;
+- proposed canonical layout;
+- source layout overlay.
+
+Actions:
+- reorder blocks;
+- merge;
+- split;
+- mark decorative;
+- mark hidden;
+- lock exact wording;
+- choose generic card, message bubble, article or plain document renderer.
+
+UX-SCR-012 — Image Region Review
+
+Every non-text region receives one policy:
+- Replace with generic placeholder.
+- Solid redact.
+- Crop.
+- Rebuild from structured data.
+- Retain source pixels.
+- Remove.
+
+Retaining source pixels:
+- requires explicit action;
+- lowers assurance;
+- shows a persistent output overlay until acknowledged;
+- appears in the final report.
+
+UX-SCR-013 — Output Preview
+
+Tabs:
+- Canonical Text
+- Rebuilt Image
+- Derivative Image, when enabled
+- Diff
+- Verification
+
+The Share button is disabled until mandatory verification completes, unless the user chooses an unverified emergency export that is clearly marked.
+
+UX-SCR-014 — Verification Report
+
+Summary:
+- final assurance class;
+- executed block versions;
+- findings detected;
+- changes applied;
+- unresolved findings;
+- retained source regions;
+- final metadata inventory;
+- final Unicode scan;
+- final URL scan;
+- OCR round-trip differences;
+- whether the output was rebuilt or derived.
+
+The report itself must not contain source secrets beyond what is necessary for the user to understand decisions.
+
+UX-SCR-015 — Android Share
+
+Use the system Sharesheet.
+Do not implement a custom destination list.
+Share:
+- text/plain for canonical text;
+- a content URI with temporary read permission for images;
+- both only when the selected target can accept the intended combination.
+
+UX-SCR-016 — Explicit Save
+
+Saving is a separate user decision from sharing.
+Default:
+- no permanent source copy;
+- no permanent session history;
+- no permanent report.
+
+Saved output:
+- uses a user-visible filename generated by the app;
+- never reuses the untrusted source filename;
+- optionally saves a separate report, never embeds the full report in image metadata.
+
+UX-SCR-017 — Session Cleanup
+
+Show:
+- source cache deletion;
+- OCR derivative deletion;
+- render cache deletion;
+- output cache deletion after share permission expiry policy;
+- report memory release.
+
+The UI should say “Session cleared” only after deletion attempts complete.
+Failures are listed without exposing content.
+
+UX-SCR-018 — Workflow Preset Editor
+
+Sequence-only editor:
+- ordered cards;
+- add optional block from a filtered palette;
+- move only to type-compatible positions;
+- validation runs after every edit;
+- mandatory blocks are pinned;
+- assurance ceiling updates live;
+- preset schema version displayed.
+
+No arbitrary custom code block in production.
+No user-provided executable scripts.
+No network block in the default edition.
+
+UX-SCR-019 — Threat Coverage
+
+Matrix:
+- threat channel;
+- blocks addressing it;
+- output modes affected;
+- known limitations;
+- last verified test corpus version.
+
+UX-SCR-020 — Error Recovery
+
+Recoverable examples:
+- OCR model unavailable;
+- memory budget exceeded;
+- a URI grant expired;
+- an optional scan failed.
+
+Fatal examples:
+- source cannot be safely decoded;
+- Canonical Document schema invalid;
+- output re-open verification fails;
+- mandatory block was bypassed;
+- a final artifact references the source URI.
+
+Recovery UI:
+- retry block;
+- choose lower-cost preset;
+- return to review;
+- discard session.
+Do not silently continue after a mandatory fatal error.
+
+
+====================================================================================================
+7. SEQUENCE-ONLY PIPELINE ENGINE
+====================================================================================================
+7.1 Execution Context
+
+Every block receives one immutable ExecutionContext and returns a new ExecutionContext.
+
+Conceptual fields:
+
+ExecutionContext
+- sessionId: ephemeral random value
+- workflowId
+- workflowVersion
+- executionRevision
+- inputKind: TEXT | IMAGE
+- requestedOutput: TEXT | REBUILT_IMAGE | BOTH | DERIVATIVE_IMAGE
+- sourceHandle: restricted internal reference
+- canonicalDocument: optional
+- textArtifact: optional
+- imageArtifact: optional
+- derivativeArtifact: optional
+- findings: append-only logical collection
+- decisions: user-approved decision collection
+- changes: append-only ledger
+- warnings: append-only collection
+- sourceDependencyMap
+- verificationReport
+- assuranceCeiling
+- currentAssurance
+- lifecycleState
+
+No block receives arbitrary access to another block’s private files.
+Blocks request artifacts through typed handles.
+
+7.2 Block contract
+
+Required metadata:
+- blockId
+- blockVersion
+- displayName
+- description
+- inputPredicate
+- outputGuarantee
+- mandatory
+- deterministic
+- requiresReview
+- settingsSchemaVersion
+- threatCoverage
+- invalidationKeys
+- verificationRequirements
+- resourceClass
+- offlineCapability
+- licenceMetadata for third-party code
+
+Required methods:
+- validateConfiguration
+- inspect
+- planChanges
+- apply
+- summarize
+- cleanup
+- produceVerificationHints
+
+Block phases:
+1. Validate
+2. Inspect
+3. Plan
+4. Review when required
+5. Apply
+6. Self-check
+7. Commit new context
+8. Cleanup temporary block artifacts
+
+7.3 Pipeline validation rules
+
+PV-001  Exactly one source block must exist.
+PV-002  Exactly one final export preparation block must exist.
+PV-003  No cycle is representable.
+PV-004  Every block input predicate must be satisfied by all previous committed state.
+PV-005  Mandatory blocks cannot be removed.
+PV-006  Verification must occur after final serialization.
+PV-007  Any transformation after verification invalidates verification.
+PV-008  A derivative-image block sets an assurance ceiling.
+PV-009  Retaining source pixels sets an assurance ceiling.
+PV-010  A URL serializer must occur after URL policy.
+PV-011  Canonical text serialization must occur after final character review.
+PV-012  Image rendering must occur after Canonical Document approval.
+PV-013  Metadata re-scan must inspect the actual saved output bytes.
+PV-014  OCR round-trip must inspect the final image artifact, not the render canvas.
+PV-015  Export cannot claim a higher assurance than the computed ceiling.
+PV-016  A failed mandatory block blocks verified export.
+PV-017  A workflow preset must declare its compatible input and output types.
+PV-018  Unknown block versions invalidate preset signatures until migrated.
+PV-019  External plug-ins cannot run in the high-assurance profile.
+PV-020  A block cannot write persistent logs containing source content.
+
+7.4 Invalidation rules
+
+Change to source:
+Invalidate every downstream block.
+
+Change to language policy:
+Invalidate Unicode analysis, canonical text, URL display decisions, rendering and verification.
+
+Change to URL policy:
+Invalidate URL changes, text serialization, image rendering and verification.
+
+Change to one review decision:
+Invalidate the Canonical Document revision and every artifact derived from that revision.
+
+Change to renderer settings:
+Invalidate image artifacts and image verification, but not approved canonical text.
+
+Change to save filename:
+Does not invalidate content verification, but filename-safety validation must rerun.
+
+7.5 Cancellation
+
+Cancellation must:
+- stop new block execution;
+- allow the currently executing native decoder to return safely;
+- mark partial artifacts invalid;
+- release bitmaps and model handles;
+- delete block-local temporary files;
+- leave the session in a resumable or discardable state;
+- never export partially verified output as verified.
+
+
+====================================================================================================
+8. CORE DATA MODEL
+====================================================================================================
+8.1 Source models
+
+TextSource
+- internalId
+- sourceMime
+- importMethod
+- plainText
+- originalLengthMetadata
+- sourceStylePresence flag
+- importWarnings
+
+ImageSource
+- internalId
+- sourceMimeClaim
+- detectedFormat
+- internalCacheUri
+- importMethod
+- byteLengthMetadata
+- decoderWarnings
+- untrustedFilenameHash only when needed for duplicate detection within session
+
+8.2 Findings
+
+Finding
+- findingId
+- blockId
+- category
+- severity
+- confidenceClass
+- sourceLocation
+- canonicalLocation
+- title
+- explanation
+- suggestedAction
+- semanticRisk
+- requiresUserDecision
+- status
+- evidenceSummary
+
+Confidence must be represented as calibrated classes unless a validated numerical calibration exists:
+- Certain by parser
+- Strong heuristic
+- Weak heuristic
+- OCR disagreement
+- Unknown
+
+8.3 Canonical Document
+
+CanonicalDocument
+- schemaVersion
+- revision
+- declaredLanguagePolicy
+- rootBlocks
+- urlTokens
+- imageRegions
+- layoutModel
+- readingOrder
+- userDecisions
+- sourceDependencyMap
+- changeLedgerReference
+
+CanonicalBlock types:
+- ParagraphBlock
+- HeadingBlock
+- ListBlock
+- QuoteBlock
+- MessageBlock
+- CodeBlock
+- TableLikeBlock
+- LinkBlock
+- ImagePlaceholderBlock
+- RedactionBlock
+- GenericUiBlock
+- UnknownRegionBlock
+
+TextRun:
+- canonicalText
+- languageTag
+- scriptSet
+- semanticRole
+- emphasisRole only when intentionally retained
+- sourceReference for review only
+- confidenceClass
+- userLocked
+
+URLToken:
+- originalReference
+- displayText
+- parsedComponents
+- normalizedComponents
+- chosenPolicy
+- finalText
+- functionalityWarning
+- userApproved
+
+ImageRegion:
+- regionId
+- regionType
+- sourceBounds
+- canonicalBounds
+- policy
+- sourcePixelRetained
+- replacementAssetId
+- userApproved
+- dependencyReason
+
+8.4 Change ledger
+
+ChangeEntry
+- changeId
+- blockId
+- blockVersion
+- canonicalRevision
+- category
+- sourceLocation
+- beforeRepresentation
+- afterRepresentation
+- reason
+- reversibleBeforeExport
+- userDecisionId
+- verificationLink
+
+Sensitive before-values should remain in memory where possible and should not be written to persistent diagnostics.
+
+8.5 Verification report
+
+VerificationReport
+- reportVersion
+- artifactRevision
+- executedBlockManifest
+- finalMetadataInventory
+- finalUnicodeFindings
+- finalUrlFindings
+- ocrRoundTripFindings
+- sourceReferenceAudit
+- sourcePixelRegionList
+- unresolvedFindingList
+- assuranceClass
+- assuranceRationale
+- verificationFailures
+- generatedAtSessionTime
+
+
+====================================================================================================
+9. DETAILED BLOCK CATALOG
+====================================================================================================
+The following catalog is normative for IDs and responsibilities.
+A block ID must never be reused for a materially different action.
+A future incompatible behaviour requires a new block version or a new ID.
+
+
+
+[SYS-001] Create Ephemeral Session
+Stage:
+Session
+
+Input:
+Android Intent, Photo Picker result, clipboard paste or editor submission
+
+Output:
+ExecutionContext with a new session workspace
+
+Specific action:
+Create a non-persistent session identifier, internal cache directories, cancellation scope, resource budget and empty ledgers. Do not derive the identifier or random source from an account ID, Android ID, advertising ID, hardware serial or long-lived installation seed.
+
+User/configuration controls:
+None in normal mode. Developer builds may expose resource-budget diagnostics without source content.
+
+Failure behaviour:
+Abort session creation and do not import content. No fallback to public storage.
+
+Independent verification:
+Confirm all paths are app-private; confirm no prior session artifacts are attached; run stale-session cleanup first.
+
+Threat coverage:
+Stable app-generated fingerprint, accidental cross-session data mixing.
+
+Assurance effect:
+Required. Does not raise assurance by itself.
+
+----------------------------------------------------------------------------------------------------
+
+[SYS-002] Stale Session Purge
+Stage:
+Session
+
+Input:
+App startup and session registry
+
+Output:
+Clean session registry
+
+Specific action:
+Find incomplete or expired app-private workspaces and delete source copies, OCR views, render intermediates and temporary reports. Keep only user-explicitly-saved outputs.
+
+User/configuration controls:
+Retention policy is product-configurable, but no source history is retained by default.
+
+Failure behaviour:
+List undeleted internal paths as a local diagnostic; do not continue using them.
+
+Independent verification:
+Re-enumerate session roots after deletion and confirm targets no longer exist.
+
+Threat coverage:
+Residual local data.
+
+Assurance effect:
+Required privacy control.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-001] Receive Android Text Share
+Stage:
+Input
+
+Input:
+ACTION_SEND Intent claiming text
+
+Output:
+TextSource candidate
+
+Specific action:
+Read only the declared plain-text payload needed for the session. Discard styled spans, HTML alternatives and unrelated extras. Copy content into a new immutable session string.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Reject malformed, missing or oversized-by-resource-policy input. Do not log raw extras.
+
+Independent verification:
+Compare imported plain text with a controlled extraction of the accepted Intent field and confirm no styled object remains.
+
+Threat coverage:
+Rich-text metadata, hidden Intent fields, malformed share input.
+
+Assurance effect:
+Required for shared text.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-002] Receive Android Image Share
+Stage:
+Input
+
+Input:
+ACTION_SEND Intent with content URI
+
+Output:
+ImageSource candidate
+
+Specific action:
+Accept a content URI with temporary read permission. Open as a stream, inspect signature, copy into app-private session storage with an app-generated internal name, then close the provider stream.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Reject inaccessible, changing, malformed or unsupported streams. Never fall back to a filesystem path supplied by another app.
+
+Independent verification:
+Reopen the internal copy; verify byte length is stable and source provider is no longer required.
+
+Threat coverage:
+Untrusted provider, untrusted filename, expired URI, provider mutation.
+
+Assurance effect:
+Required for shared image.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-003] Photo Picker Import
+Stage:
+Input
+
+Input:
+System Photo Picker result
+
+Output:
+ImageSource candidate
+
+Specific action:
+Request one image through the platform picker, copy the selected content into the ephemeral session and release unnecessary URI persistence.
+
+User/configuration controls:
+Image-only in MVP.
+
+Failure behaviour:
+Show import error and return to Entry. Do not request broad media-library permission as fallback unless separately approved.
+
+Independent verification:
+Confirm the session can continue after the external URI is unavailable.
+
+Threat coverage:
+Overbroad storage access, provider dependence.
+
+Assurance effect:
+Required for picker input.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-004] Plain Text Entry
+Stage:
+Input
+
+Input:
+Text editor content
+
+Output:
+TextSource candidate
+
+Specific action:
+Create a plain-text source from the editor. Preserve code points for inspection but remove editor styling objects and composition metadata.
+
+User/configuration controls:
+Language policy may be suggested but not applied here.
+
+Failure behaviour:
+Keep editor open and identify invalid framework state without rewriting content.
+
+Independent verification:
+Round-trip editor content into the source model and compare code-point sequence.
+
+Threat coverage:
+Styled text leakage, hidden editor spans.
+
+Assurance effect:
+Required for direct entry.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-005] Detect and Validate Source Type
+Stage:
+Input
+
+Input:
+Source candidate
+
+Output:
+Typed TextSource or ImageSource
+
+Specific action:
+Compare claimed MIME, detected signature, available stream and parser result. Resolve conflicts using detected content and user confirmation, not filename extension.
+
+User/configuration controls:
+User may cancel or explicitly choose among genuinely valid representations.
+
+Failure behaviour:
+Reject ambiguous polyglot or unsupported input rather than guessing.
+
+Independent verification:
+Run a second lightweight parser appropriate to the chosen type.
+
+Threat coverage:
+MIME confusion, extension spoofing, malformed container.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-006] Resource Guard
+Stage:
+Input
+
+Input:
+Typed source metadata and bounded probes
+
+Output:
+Resource-approved source
+
+Specific action:
+Estimate decode memory, pixel count, text length, nested container risk and available app budget. Select safe sampling or tiled processing plans without defining security thresholds from unvalidated guesses.
+
+User/configuration controls:
+Offer lower-cost processing preset when possible.
+
+Failure behaviour:
+Stop before full decode when resource safety cannot be established.
+
+Independent verification:
+Attempt bounded header-only reopen; ensure no full allocation occurred before approval.
+
+Threat coverage:
+Decompression bombs, memory exhaustion, denial of service.
+
+Assurance effect:
+Required. A skipped guard makes output unverified.
+
+----------------------------------------------------------------------------------------------------
+
+[IN-007] Source Snapshot Seal
+Stage:
+Input
+
+Input:
+App-private source copy
+
+Output:
+Sealed source handle
+
+Specific action:
+Compute a session-only content digest and mark the imported source immutable. The digest is for detecting accidental mutation within the session and is not persisted in analytics.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Abort if source bytes change after sealing.
+
+Independent verification:
+Recompute digest before each decoder consumes the source.
+
+Threat coverage:
+Time-of-check/time-of-use mutation, accidental overwrite.
+
+Assurance effect:
+Required internal integrity control.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-001] Unicode Scalar Inventory
+Stage:
+Text inspection
+
+Input:
+TextSource or OCR-approved text
+
+Output:
+TextInspection
+
+Specific action:
+Enumerate Unicode scalar values, UTF encoding anomalies, names, categories, scripts, combining classes and exact positions. Preserve grapheme-cluster boundaries for review.
+
+User/configuration controls:
+Technical display can be hidden in Simple mode.
+
+Failure behaviour:
+Mark malformed encoding as review-required; never silently replace with the replacement character without a ledger entry.
+
+Independent verification:
+Serialize inventory back to the same scalar sequence and compare.
+
+Threat coverage:
+Hidden encoding differences, malformed Unicode.
+
+Assurance effect:
+Required for text-bearing outputs.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-002] Grapheme and Normalization Analysis
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+NormalizationAnalysis
+
+Specific action:
+Compute grapheme clusters and compare the source against supported normalization forms. Record every location where canonical or compatibility normalization would change the code-point sequence.
+
+User/configuration controls:
+Normalization profile is selected later; this block only inspects.
+
+Failure behaviour:
+Do not apply changes here. Malformed or unsupported sequences become review findings.
+
+Independent verification:
+Cross-check grapheme boundaries and normalization deltas with the version-pinned Unicode library; later normalization must be idempotent.
+
+Threat coverage:
+Compatibility forms and composed/decomposed Unicode differences.
+
+Assurance effect:
+Inspection only; required evidence for canonical normalization.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-003] Default-Ignorable Scan
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+TextInspection with invisible-character findings
+
+Specific action:
+Identify zero-width characters, default-ignorable code points, directional controls, variation selectors, soft hyphens and other format controls. Classify whether each may be meaningful in the selected language or context.
+
+User/configuration controls:
+Reveal-hidden-character visualization; approved language exceptions.
+
+Failure behaviour:
+Ambiguous language-sensitive controls require review and are not removed by this block.
+
+Independent verification:
+Final Unicode scan must confirm that only approved controls remain.
+
+Threat coverage:
+Invisible UTF and bidi-control channels.
+
+Assurance effect:
+Required for strict canonical text.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-004] Whitespace Taxonomy Scan
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+TextInspection with whitespace findings
+
+Specific action:
+Classify all spacing characters, tabs, repeated spaces, leading and trailing spaces, line terminators and blank-line patterns. Distinguish visible formatting from suspicious alternative code points.
+
+User/configuration controls:
+Preserve code blocks; language-aware typography policy.
+
+Failure behaviour:
+Do not collapse whitespace inside a locked literal or code span. Ambiguous structure becomes a review item.
+
+Independent verification:
+Final serializer scans for disallowed whitespace classes and normalization idempotence.
+
+Threat coverage:
+Whitespace and line-ending fingerprinting.
+
+Assurance effect:
+Required for canonical text profiles.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-005] Confusable and Script Scan
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+TextInspection with script/confusable findings
+
+Specific action:
+Use a version-pinned Unicode spoof/confusable implementation to compute restriction level, script sets and confusable skeletons. Flag mixed-script tokens and identifiers.
+
+User/configuration controls:
+User-selected language/script policy; intentional multilingual-span exceptions.
+
+Failure behaviour:
+Never globally map all Greek or Cyrillic characters to Latin. Ambiguous tokens require review.
+
+Independent verification:
+Run the spoof checker again on final output and compare with the approved exception set.
+
+Threat coverage:
+Greek, Cyrillic and Latin homoglyphs; mixed-script identifiers.
+
+Assurance effect:
+Required for strict canonical text.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-006] Punctuation Variant Scan
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+TextInspection with punctuation findings
+
+Specific action:
+Classify quotation marks, apostrophes, dashes, ellipses, dots, colons, commas, slashes, brackets, full-width forms and language-specific punctuation.
+
+User/configuration controls:
+Canonical punctuation profile; preserve quoted code and mathematical symbols.
+
+Failure behaviour:
+Language-specific or semantically distinct punctuation changes require review.
+
+Independent verification:
+Final punctuation inventory must match the selected profile and approved exceptions.
+
+Threat coverage:
+Punctuation-difference tracing.
+
+Assurance effect:
+Required for strict profiles.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-007] Line and Paragraph Structure Scan
+Stage:
+Text inspection
+
+Input:
+TextInspection
+
+Output:
+TextInspection with structural findings
+
+Specific action:
+Record line wraps, paragraph boundaries, indentation, list markers, ordering and spacing. Distinguish semantic boundaries from viewport-induced wrapping where possible.
+
+User/configuration controls:
+Preserve semantic paragraphs; canonicalize visual wraps; conservative mode.
+
+Failure behaviour:
+Unknown distinction between semantic newline and viewport wrap requires review.
+
+Independent verification:
+OCR or text round-trip compares final structure with the approved Canonical Document.
+
+Threat coverage:
+Layout, line-break and paragraph-structure tracing.
+
+Assurance effect:
+Required for canonical reconstruction.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-008] Language Context Resolver
+Stage:
+Text inspection
+
+Input:
+TextInspection plus optional user language choice
+
+Output:
+LanguagePolicy
+
+Specific action:
+Infer candidate languages and scripts only to guide rules. The user can lock or correct the policy. Do not translate or paraphrase.
+
+User/configuration controls:
+Auto-suggest, manual language policy, multilingual mode.
+
+Failure behaviour:
+Low-confidence language detection defaults to review rather than destructive conversion.
+
+Independent verification:
+Final script set is checked against the approved policy.
+
+Threat coverage:
+False confusable replacement, language corruption.
+
+Assurance effect:
+Required policy input.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-009] Semantic Token Protection
+Stage:
+Text inspection
+
+Input:
+TextInspection and LanguagePolicy
+
+Output:
+ProtectedSpan map
+
+Specific action:
+Identify code, mathematical expressions, identifiers, cryptographic strings, email addresses and quoted literal data where punctuation or whitespace normalization may alter meaning.
+
+User/configuration controls:
+User can lock or unlock spans.
+
+Failure behaviour:
+Uncertain structured strings become review items.
+
+Independent verification:
+Verify protected spans are unchanged unless explicitly edited.
+
+Threat coverage:
+Accidental semantic corruption.
+
+Assurance effect:
+Safety control; may reduce normalization coverage.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-010] Unicode Compatibility Normalization
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument with reviewed policy
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Apply the selected Unicode normalization policy to unprotected spans. Every changed scalar sequence creates a ledger entry.
+
+User/configuration controls:
+Profile selection; protected-span exclusions.
+
+Failure behaviour:
+Stop and request review when normalized output collides with another distinct identifier in context.
+
+Independent verification:
+Re-run normalization and require idempotence.
+
+Threat coverage:
+Composed/decomposed and compatibility-form channels.
+
+Assurance effect:
+Raises canonical-text assurance when verified.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-011] Remove or Replace Approved Ignorables
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Remove disallowed default-ignorable characters and controls. Replace meaningful separators with the canonical visible representation chosen by policy.
+
+User/configuration controls:
+Per-finding review, preserve-language exceptions.
+
+Failure behaviour:
+Unreviewed semantic-risk controls block final approval.
+
+Independent verification:
+Final code-point scan confirms absence or approved presence.
+
+Threat coverage:
+Zero-width, bidi and invisible-character channels.
+
+Assurance effect:
+Raises assurance when final scan passes.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-012] Confusable Canonicalization
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument and LanguagePolicy
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Map reviewed confusable tokens to the approved script or spelling. Operate at token level with context, never as an unconditional whole-document character substitution.
+
+User/configuration controls:
+Accept suggestion, retain source, manual edit.
+
+Failure behaviour:
+Conflicts remain unresolved and lower assurance until reviewed.
+
+Independent verification:
+Final spoof scan plus approved-exception comparison.
+
+Threat coverage:
+Homoglyph tracing.
+
+Assurance effect:
+Raises assurance only after user review.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-013] Whitespace Canonicalization
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument and ProtectedSpan map
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Convert approved spaces, tabs, line endings, trailing whitespace and repeated spacing to the preset’s canonical representation outside protected spans.
+
+User/configuration controls:
+Document, message and code profiles.
+
+Failure behaviour:
+Do not modify locked literal spans.
+
+Independent verification:
+Apply the same transform again and require no further changes.
+
+Threat coverage:
+Whitespace and line-ending tracing.
+
+Assurance effect:
+Raises assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-014] Punctuation Canonicalization
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Map reviewed punctuation classes to a stable punctuation profile appropriate to the language and output format.
+
+User/configuration controls:
+Language profile, quote style, dash style.
+
+Failure behaviour:
+Ambiguous apostrophe, minus sign or mathematical punctuation requires review.
+
+Independent verification:
+Final punctuation inventory matches profile and exceptions.
+
+Threat coverage:
+Punctuation tracing.
+
+Assurance effect:
+Raises assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-015] Viewport Wrap Removal
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument with layout evidence
+
+Output:
+New CanonicalDocument revision
+
+Specific action:
+Remove line breaks judged to result only from source viewport wrapping while preserving approved paragraph and list boundaries.
+
+User/configuration controls:
+Conservative or aggressive wrap policy.
+
+Failure behaviour:
+Low-confidence joins become review items.
+
+Independent verification:
+OCR round-trip and text diff validate approved reading order.
+
+Threat coverage:
+Line-wrap and layout fingerprinting.
+
+Assurance effect:
+Raises assurance when correct.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-016] Rich Representation Strip
+Stage:
+Text normalization
+
+Input:
+CanonicalDocument
+
+Output:
+CanonicalDocument with semantic text only
+
+Specific action:
+Remove source font names, font sizes, kerning, HTML classes, CSS, Android spans, hidden annotations and clipboard alternative formats. Retain only explicitly approved semantic emphasis roles.
+
+User/configuration controls:
+Preserve semantic bold/heading role or flatten all styling.
+
+Failure behaviour:
+Unknown embedded object becomes a finding.
+
+Independent verification:
+Inspect serialized artifact for only allowed MIME and representation fields.
+
+Threat coverage:
+Font/style metadata and rich-text channels.
+
+Assurance effect:
+Required for canonical text.
+
+----------------------------------------------------------------------------------------------------
+
+[TXT-017] Canonical Text Lock
+Stage:
+Text normalization
+
+Input:
+Reviewed CanonicalDocument
+
+Output:
+Approved canonical text revision
+
+Specific action:
+Freeze the approved text revision used by all output serializers. Any later edit creates a new revision and invalidates downstream output.
+
+User/configuration controls:
+No direct settings.
+
+Failure behaviour:
+Refuse output when review-required findings are unresolved.
+
+Independent verification:
+Digest and revision link must match every downstream artifact.
+
+Threat coverage:
+Accidental divergence between outputs.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-001] URL Candidate Extraction
+Stage:
+URL analysis
+
+Input:
+TextInspection or OCR text
+
+Output:
+URL candidate list
+
+Specific action:
+Locate absolute URLs, schemeless domains, Markdown links, encoded URLs, email-like links, visible domains and QR-decoded links. Preserve surrounding context.
+
+User/configuration controls:
+Strictness for schemeless detection.
+
+Failure behaviour:
+Ambiguous candidates are findings, not automatically converted.
+
+Independent verification:
+Final URL scan confirms all retained URLs are represented in the candidate/decision ledger.
+
+Threat coverage:
+Hidden or overlooked URL tracing.
+
+Assurance effect:
+Required when text may contain links.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-002] Standards-Based URL Parse
+Stage:
+URL analysis
+
+Input:
+URL candidates
+
+Output:
+Parsed URL components
+
+Specific action:
+Use a maintained standards-based URL parser to split scheme, userinfo, host, port, path, query and fragment. Preserve the original display text separately.
+
+User/configuration controls:
+None; parser behaviour is version-pinned.
+
+Failure behaviour:
+Do not use an ad-hoc regex as the final parser. Parse failures require review.
+
+Independent verification:
+Serialize and parse again; components must be stable.
+
+Threat coverage:
+Parser confusion, encoded tracking fields.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-003] Hostname Canonicalization and Spoof Check
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+Hostname findings and canonical host
+
+Specific action:
+Normalize hostname representation, inspect internationalized domain forms, mixed scripts, confusables, userinfo deception and suspicious delimiter placement.
+
+User/configuration controls:
+Display Unicode and ASCII forms; allow intentional international domains.
+
+Failure behaviour:
+High-risk host ambiguity blocks automatic share-as-clickable-link.
+
+Independent verification:
+Re-run spoof and host parser on final URL.
+
+Threat coverage:
+Homoglyph domain tracing and phishing risk.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-004] Registrable Domain Resolution
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+Domain boundary model
+
+Specific action:
+Determine the registrable domain using a maintained public-suffix data source rather than a fixed last-two-label rule.
+
+User/configuration controls:
+Data-source version visible in technical details.
+
+Failure behaviour:
+If suffix data is unavailable, do not claim origin-only safety; request review.
+
+Independent verification:
+Test known multi-label suffix cases in the corpus.
+
+Threat coverage:
+Personalized subdomains, incorrect domain reduction.
+
+Assurance effect:
+Required for origin-only mode.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-005] Query Parameter Inventory
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+Query findings
+
+Specific action:
+Decode parameter names and values without executing them. Classify known tracking names, identifiers, session-like values, referral data and unknown fields.
+
+User/configuration controls:
+Known-rule database updates are versioned; strict mode treats unknown query as sensitive.
+
+Failure behaviour:
+Malformed percent encoding remains visible and review-required.
+
+Independent verification:
+Final scan confirms removed components do not reappear.
+
+Threat coverage:
+Query tracing.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-006] Path Token Inventory
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+Path findings
+
+Specific action:
+Inspect path segments for high-entropy identifiers, usernames, invite codes, document IDs and personalised routes. Do not assume path is safe.
+
+User/configuration controls:
+Conservative, strict or origin-only policy.
+
+Failure behaviour:
+Unknown functional path cannot be automatically removed without warning.
+
+Independent verification:
+Compare final path against approved decision.
+
+Threat coverage:
+Path-based tracing.
+
+Assurance effect:
+Required for strict URL profiles.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-007] Subdomain Inventory
+Stage:
+URL analysis
+
+Input:
+Parsed URLs and domain boundary
+
+Output:
+Subdomain findings
+
+Specific action:
+Identify user-specific, tenant-specific, tracking or high-entropy subdomain labels while preserving the registrable domain.
+
+User/configuration controls:
+Allow known functional service subdomains.
+
+Failure behaviour:
+Unknown subdomain is a review item in strict mode.
+
+Independent verification:
+Final host components must match the approved host decision.
+
+Threat coverage:
+Subdomain tracing.
+
+Assurance effect:
+Required for strict URL profiles.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-008] Fragment and Userinfo Scan
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+URL findings
+
+Specific action:
+Flag fragments and userinfo, including cases where userinfo visually disguises the actual host.
+
+User/configuration controls:
+Default remove fragment; default reject userinfo for share output unless explicitly required.
+
+Failure behaviour:
+Clickable export is blocked for unresolved deceptive userinfo.
+
+Independent verification:
+Final parser confirms absence or approved presence.
+
+Threat coverage:
+Fragment tracking, authority confusion.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-009] Redirect and Short-Link Warning
+Stage:
+URL analysis
+
+Input:
+Parsed URLs
+
+Output:
+Link-resolution warning
+
+Specific action:
+Classify known shortening or redirect patterns from a locally versioned ruleset. The default build does not make a network request to resolve them.
+
+User/configuration controls:
+User may replace with non-clickable display text or remove.
+
+Failure behaviour:
+Do not claim destination safety without resolution.
+
+Independent verification:
+Final report records unresolved redirect opacity.
+
+Threat coverage:
+Opaque redirect tracing.
+
+Assurance effect:
+Assurance limitation.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-010] Known Tracking Parameter Removal
+Stage:
+URL transformation
+
+Input:
+Approved parsed URLs
+
+Output:
+Canonical URLs
+
+Specific action:
+Remove versioned known tracking/referral parameters and preserve a ledger entry for each removed name/value location.
+
+User/configuration controls:
+Balanced and strict rule profiles.
+
+Failure behaviour:
+Unknown parameters remain for later policy; no silent blanket success message.
+
+Independent verification:
+Final parser confirms removed names are absent.
+
+Threat coverage:
+Known query tracking.
+
+Assurance effect:
+Raises URL assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-011] Strict Query and Fragment Removal
+Stage:
+URL transformation
+
+Input:
+Canonical URLs
+
+Output:
+Stricter canonical URLs
+
+Specific action:
+Remove all query and fragment components when the user selected strict policy. Warn that functionality may change.
+
+User/configuration controls:
+Per-link override.
+
+Failure behaviour:
+Unreviewed functionality warning blocks approval.
+
+Independent verification:
+Final parse must contain empty query and fragment.
+
+Threat coverage:
+Unknown query and fragment tracing.
+
+Assurance effect:
+Raises URL assurance after review.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-012] Path Reduction
+Stage:
+URL transformation
+
+Input:
+Canonical URLs
+
+Output:
+Reduced URLs
+
+Specific action:
+Remove or replace path segments according to the approved policy. Origin-only mode removes the full path.
+
+User/configuration controls:
+Keep path, remove suspicious segments, origin-only, non-clickable domain.
+
+Failure behaviour:
+Any changed path requires user acknowledgement unless the URL is removed entirely.
+
+Independent verification:
+Final parse and display-text comparison.
+
+Threat coverage:
+Path token tracing.
+
+Assurance effect:
+Raises URL assurance but may reduce function.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-013] Subdomain Reduction
+Stage:
+URL transformation
+
+Input:
+Canonical URLs and domain boundary
+
+Output:
+Reduced-host URLs
+
+Specific action:
+Remove non-approved subdomains and retain only the approved host boundary.
+
+User/configuration controls:
+Keep required service subdomain or registrable domain only.
+
+Failure behaviour:
+Cannot run without reliable domain boundary.
+
+Independent verification:
+Final host must equal approved host.
+
+Threat coverage:
+Personalized subdomain tracing.
+
+Assurance effect:
+Raises URL assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-014] Canonical URL Serializer
+Stage:
+URL transformation
+
+Input:
+Approved URL components
+
+Output:
+Canonical URL text
+
+Specific action:
+Serialize URLs from parsed approved components with stable casing and encoding. Never edit the source string in-place.
+
+User/configuration controls:
+Clickable URL or non-clickable display mode.
+
+Failure behaviour:
+Serializer/parser mismatch is fatal for verified output.
+
+Independent verification:
+Parse serialized output and compare every component.
+
+Threat coverage:
+Byte-level URL variants, percent-encoding variants.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[URL-015] URL Functionality Review Gate
+Stage:
+Review
+
+Input:
+Original and cleaned URLs
+
+Output:
+Approved URL decisions
+
+Specific action:
+Show component-level diff and require explicit approval where cleaning could break navigation, invitation, authentication or document access.
+
+User/configuration controls:
+Per-link decision.
+
+Failure behaviour:
+Unapproved semantic change blocks canonical lock.
+
+Independent verification:
+Decision ID is attached to final URL token.
+
+Threat coverage:
+Accidental loss of meaning.
+
+Assurance effect:
+Required for changed functional URLs.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-001] Image Header Probe
+Stage:
+Image analysis
+
+Input:
+Sealed ImageSource
+
+Output:
+Image header model
+
+Specific action:
+Read only bounded header data to identify format, dimensions, animation, bit depth, channels and container structure before full decode.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Reject unsupported or inconsistent headers.
+
+Independent verification:
+Open with an independent decoder probe where available.
+
+Threat coverage:
+Malformed image, resource exhaustion, type confusion.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-002] Controlled Decode
+Stage:
+Image analysis
+
+Input:
+Resource-approved ImageSource
+
+Output:
+DecodedImage handle
+
+Specific action:
+Decode into app-controlled memory under a resource plan. Avoid retaining the source decoder object beyond the block.
+
+User/configuration controls:
+Low-memory strategy may select tiled processing.
+
+Failure behaviour:
+Abort safely on decoder errors or budget violations.
+
+Independent verification:
+Check decoded bounds and channel model against header model.
+
+Threat coverage:
+Decoder abuse, hidden channel retention.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-003] Orientation Materialization
+Stage:
+Image analysis
+
+Input:
+DecodedImage and orientation metadata
+
+Output:
+Orientation-applied DecodedImage
+
+Specific action:
+Apply rotation and mirroring to pixels so later processing no longer depends on orientation metadata.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Ambiguous orientation becomes a warning; display source and interpreted preview.
+
+Independent verification:
+Output dimensions and corner test markers match transformation.
+
+Threat coverage:
+Orientation metadata dependence.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-004] Container Metadata Inventory
+Stage:
+Image analysis
+
+Input:
+Sealed source bytes
+
+Output:
+Metadata findings
+
+Specific action:
+Enumerate known EXIF, XMP, IPTC-like fields, ICC data, thumbnails, text chunks, application chunks and encoder-specific structures without copying them.
+
+User/configuration controls:
+Technical report controls only.
+
+Failure behaviour:
+Unknown chunks are listed as unknown rather than treated as safe.
+
+Independent verification:
+Independent post-output scan must show no inherited fields.
+
+Threat coverage:
+Metadata injection.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-005] Embedded Thumbnail Scan
+Stage:
+Image analysis
+
+Input:
+Image container
+
+Output:
+Thumbnail findings
+
+Specific action:
+Find embedded previews or thumbnails that may contain an unredacted or differently watermarked image.
+
+User/configuration controls:
+Default discard.
+
+Failure behaviour:
+Unreadable embedded preview is still reported.
+
+Independent verification:
+Final output container scan confirms no source thumbnail.
+
+Threat coverage:
+Thumbnail leakage.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-006] Colour and Alpha Model Inventory
+Stage:
+Image analysis
+
+Input:
+DecodedImage
+
+Output:
+Channel findings
+
+Specific action:
+Record colour space, channel count, alpha presence, transparency distribution and bit depth. Identify non-opaque regions and unusual auxiliary channels.
+
+User/configuration controls:
+None.
+
+Failure behaviour:
+Unsupported colour models must be converted only in the render path, not silently treated as sRGB.
+
+Independent verification:
+Final output channel model is compared with canonical renderer specification.
+
+Threat coverage:
+Alpha and colour-profile channels.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-007] Low-Bit-Plane Diagnostic
+Stage:
+Image analysis
+
+Input:
+DecodedImage
+
+Output:
+Heuristic findings
+
+Specific action:
+Inspect low bit planes and local colour residuals for structured patterns. This is diagnostic evidence only and must not be used as proof of cleanliness.
+
+User/configuration controls:
+Expert mode only.
+
+Failure behaviour:
+Failure does not block canonical reconstruction; it does block claims that a derivative was fully analysed.
+
+Independent verification:
+No independent pass claim; retain diagnostic summary.
+
+Threat coverage:
+Simple LSB channels.
+
+Assurance effect:
+Diagnostic.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-008] Frequency and Repetition Diagnostic
+Stage:
+Image analysis
+
+Input:
+DecodedImage
+
+Output:
+Heuristic findings
+
+Specific action:
+Inspect local frequency residuals, repeated blocks, periodic alignment and rotation-related repetition using benchmarked detectors. Thresholds must be calibrated against the project corpus, not invented by an agent.
+
+User/configuration controls:
+Expert mode; detector set versioned.
+
+Failure behaviour:
+Failure does not block full reconstruction; derivative assurance remains low.
+
+Independent verification:
+Run detector on source and final derivative for comparative reporting only.
+
+Threat coverage:
+Frequency, tiled and spatial watermark channels.
+
+Assurance effect:
+Diagnostic.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-009] OCR View Generator
+Stage:
+OCR
+
+Input:
+Orientation-applied DecodedImage
+
+Output:
+OCRViewSet
+
+Specific action:
+Generate bounded temporary views for recognition, such as native, grayscale, contrast-adjusted, resampled or region-cropped representations. Views never become user output.
+
+User/configuration controls:
+Preset chooses view strategies based on corpus benchmark.
+
+Failure behaviour:
+Delete all generated views on block completion or session purge.
+
+Independent verification:
+Verify each view is linked to the same sealed source revision.
+
+Threat coverage:
+OCR robustness against subtle glyph changes.
+
+Assurance effect:
+Supports extraction; does not directly raise assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-010] Primary OCR Engine
+Stage:
+OCR
+
+Input:
+OCRViewSet
+
+Output:
+OCR result set
+
+Specific action:
+Run an on-device, bundled OCR engine for the selected script models. Capture blocks, lines, elements, symbols, bounds, rotation and confidence data when available.
+
+User/configuration controls:
+Script model selection; offline-only policy.
+
+Failure behaviour:
+Missing model cannot silently trigger network download in strict offline mode.
+
+Independent verification:
+Model availability and offline operation are tested before release.
+
+Threat coverage:
+Font/glyph channel extraction, visible text recovery.
+
+Assurance effect:
+Required for image-to-text or rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-011] Secondary OCR Adapter
+Stage:
+OCR
+
+Input:
+OCRViewSet
+
+Output:
+Independent OCR result set
+
+Specific action:
+Optionally run a second maintained OCR backend or materially different preprocessing path to identify disagreements.
+
+User/configuration controls:
+Enabled by benchmarked presets; not a hard-coded count requirement.
+
+Failure behaviour:
+Failure creates a warning; strict profiles may require manual review.
+
+Independent verification:
+Consensus block records which engines agreed.
+
+Threat coverage:
+OCR error detection.
+
+Assurance effect:
+Raises extraction confidence when agreement exists.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-012] OCR Consensus Builder
+Stage:
+OCR
+
+Input:
+Multiple OCR result sets
+
+Output:
+OCRConsensus
+
+Specific action:
+Align recognized lines and tokens by geometry and text similarity. Mark agreements, disagreements, missing tokens and script conflicts. Do not average characters into an invented result.
+
+User/configuration controls:
+Conservative consensus policy.
+
+Failure behaviour:
+Every unresolved conflict becomes a review item.
+
+Independent verification:
+OCR round-trip later compares final output against user-approved consensus.
+
+Threat coverage:
+Pure OCR failure, homoglyph ambiguity.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-013] Text Region Geometry
+Stage:
+Layout extraction
+
+Input:
+OCRConsensus
+
+Output:
+Text region model
+
+Specific action:
+Create normalized text boxes, baselines, reading orientation and line groups. Preserve confidence and source bounds.
+
+User/configuration controls:
+None.
+
+Failure behaviour:
+Overlapping or uncertain boxes become layout review findings.
+
+Independent verification:
+Overlay model is visually tested against source preview.
+
+Threat coverage:
+Layout reconstruction.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-014] Reading Order Resolver
+Stage:
+Layout extraction
+
+Input:
+Text region model
+
+Output:
+Ordered text blocks
+
+Specific action:
+Determine reading order using geometric and language-direction evidence. Separate viewport wrapping from semantic paragraphs when possible.
+
+User/configuration controls:
+Document, chat, article or manual mode.
+
+Failure behaviour:
+Low-confidence order requires user review.
+
+Independent verification:
+Final Canonical Document displays numbered order for approval.
+
+Threat coverage:
+Layout and ordering personalization.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-015] QR and Barcode Decoder
+Stage:
+Image analysis
+
+Input:
+DecodedImage
+
+Output:
+Structured code findings
+
+Specific action:
+Detect and decode visible machine-readable codes locally. Route decoded text through URL and Unicode inspection. Keep the visual region separate from the decoded value.
+
+User/configuration controls:
+Detect only, remove, replace with canonical code or placeholder.
+
+Failure behaviour:
+Undecodable code is treated as an unknown source region.
+
+Independent verification:
+Final image is scanned again for remaining codes.
+
+Threat coverage:
+QR/barcode token tracing.
+
+Assurance effect:
+Required in strict image profiles.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-016] Non-Text Region Segmenter
+Stage:
+Image analysis
+
+Input:
+DecodedImage and text boxes
+
+Output:
+ImageRegion collection
+
+Specific action:
+Partition remaining regions into photograph, avatar, icon, logo, map, chart, background, decoration and unknown classes using maintained local components where feasible.
+
+User/configuration controls:
+Manual-only fallback is always available.
+
+Failure behaviour:
+Unknown classification never defaults to safe retention.
+
+Independent verification:
+Every final retained source region must map to an approved ImageRegion.
+
+Threat coverage:
+Avatars, unique imagery and UI context.
+
+Assurance effect:
+Required for rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-017] Source Pixel Dependency Map
+Stage:
+Image analysis
+
+Input:
+Canonical regions and rendering policy
+
+Output:
+Dependency map
+
+Specific action:
+Track exactly which prospective output regions would reuse or derive from source pixels, including crops, resamples and masked composites.
+
+User/configuration controls:
+None.
+
+Failure behaviour:
+Missing dependency lineage is fatal for high-assurance output.
+
+Independent verification:
+Final output region manifest is compared against renderer operations.
+
+Threat coverage:
+Hidden source-pixel retention.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[IMG-018] Platform UI Pattern Classifier
+Stage:
+Layout extraction
+
+Input:
+Region and layout model
+
+Output:
+Generic UI role suggestions
+
+Specific action:
+Suggest generic roles such as message bubble, article card, notification row or profile header. Do not copy proprietary UI pixels.
+
+User/configuration controls:
+User can choose generic renderer or plain document.
+
+Failure behaviour:
+Low-confidence classification falls back to plain layout.
+
+Independent verification:
+Renderer uses only bundled generic assets.
+
+Threat coverage:
+UI geometry fingerprint.
+
+Assurance effect:
+Optional.
+
+----------------------------------------------------------------------------------------------------
+
+[CAN-001] Canonical Document Builder
+Stage:
+Canonicalization
+
+Input:
+Text inspection or OCR/layout models
+
+Output:
+CanonicalDocument revision
+
+Specific action:
+Create semantic blocks, text runs, URL tokens, image regions and reading order. Store source references only for review; do not place source bitmap data inside semantic blocks.
+
+User/configuration controls:
+Document template selection.
+
+Failure behaviour:
+Schema validation failure is fatal.
+
+Independent verification:
+Serialize and deserialize the Canonical Document; semantic equality must hold.
+
+Threat coverage:
+Cross-channel inheritance.
+
+Assurance effect:
+Core mandatory block.
+
+----------------------------------------------------------------------------------------------------
+
+[CAN-002] Canonical Schema Validator
+Stage:
+Canonicalization
+
+Input:
+CanonicalDocument
+
+Output:
+Validated CanonicalDocument
+
+Specific action:
+Validate IDs, block ordering, language tags, bounds, URL decisions, source dependencies and revision lineage.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Fatal on invalid references or cycles in semantic structures.
+
+Independent verification:
+Independent schema validator in tests and runtime.
+
+Threat coverage:
+Agent-generated invalid state.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[CAN-003] Change Ledger Builder
+Stage:
+Canonicalization
+
+Input:
+Findings, transformations and decisions
+
+Output:
+Change ledger
+
+Specific action:
+Create an append-only session ledger connecting every change to a block version, source location, canonical revision and user decision.
+
+User/configuration controls:
+User-facing summary detail level.
+
+Failure behaviour:
+Missing ledger entry for a semantic change blocks verified export.
+
+Independent verification:
+Diff engine compares revisions and ensures all differences are explained.
+
+Threat coverage:
+Unexplained transformations.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-001] Invisible Character Review
+Stage:
+Review
+
+Input:
+Hidden-character findings
+
+Output:
+User decisions
+
+Specific action:
+Present each meaningful or ambiguous invisible character with context and proposed visible outcome.
+
+User/configuration controls:
+Per-item or homogeneous bulk action.
+
+Failure behaviour:
+Unresolved semantic-risk findings block canonical lock.
+
+Independent verification:
+Final Unicode scan references decision IDs.
+
+Threat coverage:
+Invisible UTF attack.
+
+Assurance effect:
+Required when findings exist.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-002] Confusable Character Review
+Stage:
+Review
+
+Input:
+Confusable findings
+
+Output:
+User decisions
+
+Specific action:
+Show code points, scripts, visual similarity and suggested token-level canonical spelling.
+
+User/configuration controls:
+Retain, replace, manual edit, mark intentional language.
+
+Failure behaviour:
+Do not allow blind whole-document replacement.
+
+Independent verification:
+Final spoof scan matches approved exception set.
+
+Threat coverage:
+Greek/alpha and mixed-script attack.
+
+Assurance effect:
+Required when findings exist.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-003] OCR Ambiguity Review
+Stage:
+Review
+
+Input:
+OCR disagreements
+
+Output:
+Approved text
+
+Specific action:
+Show source crop, alternatives, engine evidence and editable result. Require confirmation for identifiers, URLs, names and numbers with disagreement.
+
+User/configuration controls:
+Manual edit and lock.
+
+Failure behaviour:
+Unresolved high-impact ambiguity blocks high-assurance output.
+
+Independent verification:
+Final render OCR is compared against approved result.
+
+Threat coverage:
+OCR failure and font perturbation.
+
+Assurance effect:
+Required when findings exist.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-004] URL Policy Review
+Stage:
+Review
+
+Input:
+Original and transformed URL models
+
+Output:
+Approved URL decisions
+
+Specific action:
+Present component-level changes and functional warnings. Allow link removal or non-clickable text.
+
+User/configuration controls:
+Per-link.
+
+Failure behaviour:
+Unapproved changed URL blocks lock.
+
+Independent verification:
+Final URL scan uses decision manifest.
+
+Threat coverage:
+URL query/path/subdomain tracing.
+
+Assurance effect:
+Required when URLs changed.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-005] Reading Order Review
+Stage:
+Review
+
+Input:
+Ordered text blocks
+
+Output:
+Approved reading order
+
+Specific action:
+Let the user reorder, merge, split and classify blocks, especially for columns, chats and cards.
+
+User/configuration controls:
+Template-specific controls.
+
+Failure behaviour:
+Unresolved order lowers confidence and may block rebuilt image.
+
+Independent verification:
+Canonical text preview reflects exact approved order.
+
+Threat coverage:
+Layout fingerprint and semantic corruption.
+
+Assurance effect:
+Required when order confidence is insufficient.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-006] Image Region Policy Review
+Stage:
+Review
+
+Input:
+ImageRegion collection
+
+Output:
+Approved region policies
+
+Specific action:
+Assign remove, redact, placeholder, structured rebuild, crop or retain-source policy to every non-text region.
+
+User/configuration controls:
+Per-region and grouped controls.
+
+Failure behaviour:
+Unknown region cannot be silently retained in strict reconstruction.
+
+Independent verification:
+Dependency map lists every retained region.
+
+Threat coverage:
+Source pixel, avatar, map and unique-image channels.
+
+Assurance effect:
+Required for rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-007] Semantic Diff Review
+Stage:
+Review
+
+Input:
+Source interpretation and canonical revision
+
+Output:
+Approved canonical revision
+
+Specific action:
+Show wording, punctuation, whitespace, URL and structure differences in one review surface.
+
+User/configuration controls:
+Filter by category.
+
+Failure behaviour:
+Unexplained difference blocks canonical lock.
+
+Independent verification:
+Change ledger must account for every diff.
+
+Threat coverage:
+Accidental semantic change.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REV-008] Assurance Consequence Gate
+Stage:
+Review
+
+Input:
+Chosen user decisions
+
+Output:
+Approved assurance ceiling
+
+Specific action:
+Explain how retaining source pixels, unresolved URLs or skipped diagnostics affect the maximum output assurance.
+
+User/configuration controls:
+User may revise decision or accept lower assurance.
+
+Failure behaviour:
+Do not hide the downgrade.
+
+Independent verification:
+Final assurance computation reproduces the shown ceiling.
+
+Threat coverage:
+False sense of safety.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-001] Fresh Canvas Allocator
+Stage:
+Rendering
+
+Input:
+Approved CanonicalDocument
+
+Output:
+Fresh render canvas
+
+Specific action:
+Allocate a new raster surface with controlled dimensions, channel layout and colour model. Never alias the source bitmap buffer.
+
+User/configuration controls:
+Output size policy is derived from layout and device-safe resource plan.
+
+Failure behaviour:
+Allocation failure offers text-only output or a lower-cost layout, not source-pixel fallback.
+
+Independent verification:
+Memory identity and dependency audit confirm no source buffer reference.
+
+Threat coverage:
+Source pixel inheritance.
+
+Assurance effect:
+Required for rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-002] Bundled Font Resolver
+Stage:
+Rendering
+
+Input:
+Canonical text runs
+
+Output:
+Font plan
+
+Specific action:
+Map approved language/script runs to versioned bundled fonts. Do not select OEM fonts for high-assurance rendering.
+
+User/configuration controls:
+User may select among bundled canonical themes.
+
+Failure behaviour:
+Missing glyph triggers a visible fallback review rather than invisible system-font fallback.
+
+Independent verification:
+Glyph coverage test confirms every output scalar has an approved bundled font.
+
+Threat coverage:
+Font fingerprint and device font variation.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-003] Deterministic Text Shaper
+Stage:
+Rendering
+
+Input:
+Canonical text and font plan
+
+Output:
+Glyph layout
+
+Specific action:
+Shape text using controlled inputs: bundled font, canonical text, language direction and fixed renderer policy. Avoid installation-specific random behaviour.
+
+User/configuration controls:
+Theme and semantic role only.
+
+Failure behaviour:
+Shaping failure blocks image output.
+
+Independent verification:
+Repeat render within the same supported build and compare semantic and layout invariants.
+
+Threat coverage:
+Glyph and layout fingerprint.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-004] Canonical Layout Renderer
+Stage:
+Rendering
+
+Input:
+Canonical blocks and glyph layout
+
+Output:
+Rendered UI primitives
+
+Specific action:
+Render a generic document, message, article or card layout from semantic roles. Do not trace source pixels or copy source UI assets.
+
+User/configuration controls:
+Canonical theme, density-independent spacing profile.
+
+Failure behaviour:
+Unsupported block falls back to explicit generic block, not source crop.
+
+Independent verification:
+Dependency map confirms renderer assets are bundled.
+
+Threat coverage:
+Source layout and UI fingerprint.
+
+Assurance effect:
+Required for full reconstruction.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-005] Structured Region Renderer
+Stage:
+Rendering
+
+Input:
+Approved structured regions
+
+Output:
+Rendered regions
+
+Specific action:
+Recreate supported structured content such as plain charts, simple shapes or decoded QR representations only when the user approved the semantic data.
+
+User/configuration controls:
+Per-region.
+
+Failure behaviour:
+Complex unsupported region becomes placeholder/redaction/retained-source decision.
+
+Independent verification:
+Region output is traced to structured data, not source pixels.
+
+Threat coverage:
+Image-region provenance.
+
+Assurance effect:
+Optional.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-006] Placeholder and Redaction Renderer
+Stage:
+Rendering
+
+Input:
+Approved region policies
+
+Output:
+Rendered placeholders/redactions
+
+Specific action:
+Draw generic placeholders or opaque redactions on the fresh canvas. Labels are canonical text, not source labels unless approved.
+
+User/configuration controls:
+Placeholder style and optional category label.
+
+Failure behaviour:
+Redaction must be baked into pixels and not stored as a removable layer.
+
+Independent verification:
+Reopen final raster and inspect redacted area; no hidden layer or source crop is present.
+
+Threat coverage:
+Sensitive visible content, reversible overlays.
+
+Assurance effect:
+Required where selected.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-007] Approved Source Region Import
+Stage:
+Rendering
+
+Input:
+Approved retain-source regions
+
+Output:
+Rendered source-dependent regions
+
+Specific action:
+Crop only the explicitly approved region, apply the declared derivative transform and record exact dependency lineage.
+
+User/configuration controls:
+Per-region retain decision.
+
+Failure behaviour:
+Any undeclared source import is fatal.
+
+Independent verification:
+Pixel dependency audit compares renderer operation log and final report.
+
+Threat coverage:
+Residual watermark in retained regions.
+
+Assurance effect:
+Lowers assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-008] Alpha Flatten
+Stage:
+Rendering
+
+Input:
+Rendered canvas
+
+Output:
+Opaque raster
+
+Specific action:
+Composite all content onto the canonical background and remove source-derived transparency channels.
+
+User/configuration controls:
+Canonical background theme.
+
+Failure behaviour:
+Unexpected transparency after flattening is fatal for strict output.
+
+Independent verification:
+Final decoder confirms expected channel and alpha model.
+
+Threat coverage:
+Alpha-channel watermarking.
+
+Assurance effect:
+Raises assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-009] Canonical Colour Conversion
+Stage:
+Rendering
+
+Input:
+Opaque raster
+
+Output:
+Canonical-colour raster
+
+Specific action:
+Convert to the app’s selected canonical output colour representation using versioned conversion behaviour. Do not copy source profiles.
+
+User/configuration controls:
+Canonical renderer profile only; source profile preservation is not available in high-assurance mode.
+
+Failure behaviour:
+Conversion failure blocks image serialization.
+
+Independent verification:
+Final metadata/channel scan confirms expected representation and no source profile.
+
+Threat coverage:
+Colour-profile and low-amplitude colour channels.
+
+Assurance effect:
+Raises assurance.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-010] Fresh Image Serializer
+Stage:
+Serialization
+
+Input:
+Canonical-colour raster
+
+Output:
+ImageArtifact
+
+Specific action:
+Encode a new image container from the final raster using a maintained encoder. Do not copy source chunks, tables, thumbnails, filenames or application metadata.
+
+User/configuration controls:
+Output format among approved formats.
+
+Failure behaviour:
+Encoder failure blocks verified image output.
+
+Independent verification:
+Reopen the exact saved bytes with independent parsers.
+
+Threat coverage:
+File/container fingerprint and metadata.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[REN-011] Metadata Allowlist Writer
+Stage:
+Serialization
+
+Input:
+ImageArtifact
+
+Output:
+Minimal ImageArtifact
+
+Specific action:
+Write only fields strictly required by the chosen format and product behaviour. Do not write device model, build host, source timestamp, app session ID or user ID.
+
+User/configuration controls:
+Optional generic software field should default off.
+
+Failure behaviour:
+Any unexpected field found later fails metadata verification.
+
+Independent verification:
+Metadata re-scan of final bytes.
+
+Threat coverage:
+Metadata injection and app-generated fingerprint.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[OUT-TXT-001] Canonical Plain-Text Serializer
+Stage:
+Serialization
+
+Input:
+Approved canonical text revision
+
+Output:
+TextArtifact
+
+Specific action:
+Create a fresh plain-text representation from canonical text runs and approved structural separators. Do not carry source spans, HTML or alternative clipboard representations.
+
+User/configuration controls:
+Output newline profile and optional plain labels.
+
+Failure behaviour:
+Serializer mismatch or unsupported scalar blocks verified export.
+
+Independent verification:
+Reparse final bytes and compare scalar sequence to approved canonical revision.
+
+Threat coverage:
+Rich-text and byte-level text channels.
+
+Assurance effect:
+Required for text output.
+
+----------------------------------------------------------------------------------------------------
+
+[OUT-TXT-002] Final Text MIME Packager
+Stage:
+Export preparation
+
+Input:
+TextArtifact
+
+Output:
+Share-ready text object
+
+Specific action:
+Package only the approved plain-text MIME representation for sharing. Avoid hidden HTML extras unless separately reviewed.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Unexpected alternative MIME blocks verified export.
+
+Independent verification:
+Inspect the final Intent before launch.
+
+Threat coverage:
+Alternative representation leakage.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[OUT-IMG-001] Secure Image Share Package
+Stage:
+Export preparation
+
+Input:
+Verified ImageArtifact
+
+Output:
+Share-ready content URI
+
+Specific action:
+Place output in the approved app-private share directory, generate a content URI and grant temporary read permission through the outgoing Intent.
+
+User/configuration controls:
+None.
+
+Failure behaviour:
+Never use a file URI or broad shared-directory permission.
+
+Independent verification:
+Inspect URI authority, path scope and permission flags.
+
+Threat coverage:
+Uncontrolled file exposure.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[OUT-BND-001] Output Bundle Builder
+Stage:
+Export preparation
+
+Input:
+Text and/or image artifacts plus report summary
+
+Output:
+OutputBundle
+
+Specific action:
+Build a single ordered bundle matching the selected output mode. For BOTH, include the canonical text and rebuilt image from the same Canonical Document revision.
+
+User/configuration controls:
+Text only, image only, both or derivative.
+
+Failure behaviour:
+Revision mismatch is fatal.
+
+Independent verification:
+All artifact revision links must match.
+
+Threat coverage:
+Cross-output inconsistency.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-001] Derivative Resample
+Stage:
+Experimental derivative
+
+Input:
+Orientation-applied source image
+
+Output:
+Derived raster
+
+Specific action:
+Resample onto a new grid using a maintained image library. This may disrupt simple pixel-grid signals but is not a reliable robust-watermark removal method.
+
+User/configuration controls:
+Kernel and scale are preset-controlled and benchmarked; no arbitrary magic values in product copy.
+
+Failure behaviour:
+Failure offers reconstruction or text output.
+
+Independent verification:
+Compare diagnostic scans before and after without claiming absence.
+
+Threat coverage:
+Simple spatial and LSB patterns.
+
+Assurance effect:
+Sets assurance ceiling to derivative.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-002] Derivative Channel Canonicalization
+Stage:
+Experimental derivative
+
+Input:
+Derived raster
+
+Output:
+Canonical-channel derivative
+
+Specific action:
+Convert channel count, alpha handling and bit depth to the derivative profile.
+
+User/configuration controls:
+Profile-controlled.
+
+Failure behaviour:
+Unsupported conversion blocks derivative output.
+
+Independent verification:
+Final channel scan.
+
+Threat coverage:
+Alpha, simple LSB and colour-channel variation.
+
+Assurance effect:
+Derivative ceiling remains.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-003] Derivative Quantization
+Stage:
+Experimental derivative
+
+Input:
+Canonical-channel derivative
+
+Output:
+Quantized derivative
+
+Specific action:
+Apply a benchmarked colour quantization policy intended to reduce minor colour differences. Preserve a warning that robust signals may survive.
+
+User/configuration controls:
+Preset only.
+
+Failure behaviour:
+Do not apply when benchmark shows unacceptable readability loss.
+
+Independent verification:
+Quality and diagnostic comparison against project corpus.
+
+Threat coverage:
+Simple colour-difference channels.
+
+Assurance effect:
+Derivative ceiling remains.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-004] Ephemeral Stochastic Perturbation
+Stage:
+Experimental derivative
+
+Input:
+Derived raster
+
+Output:
+Perturbed derivative
+
+Specific action:
+Optionally add session-only stochastic perturbation using a fresh random source that is not stored or derived from device identity.
+
+User/configuration controls:
+Off by default; preset controlled.
+
+Failure behaviour:
+Never claim that noise defeats robust watermarking. Never reuse a stable seed.
+
+Independent verification:
+Check that no seed or random state is written to output metadata or logs.
+
+Threat coverage:
+Simple residual signals; avoids app-generated stable pattern.
+
+Assurance effect:
+Derivative ceiling remains.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-005] Derivative Fresh Serialize
+Stage:
+Experimental derivative
+
+Input:
+Final derivative raster
+
+Output:
+Derivative ImageArtifact
+
+Specific action:
+Encode a fresh container and apply the metadata allowlist.
+
+User/configuration controls:
+Approved output format.
+
+Failure behaviour:
+Unexpected metadata fails output verification.
+
+Independent verification:
+Full metadata re-scan and source-dependency report.
+
+Threat coverage:
+Container metadata.
+
+Assurance effect:
+Derivative ceiling remains.
+
+----------------------------------------------------------------------------------------------------
+
+[DER-006] Mandatory Derivative Warning
+Stage:
+Experimental derivative
+
+Input:
+Derivative artifact
+
+Output:
+User acknowledgement
+
+Specific action:
+Explain that source pixels remain semantically and statistically related to the source and unknown robust watermark signals may remain.
+
+User/configuration controls:
+No dismissal persistence across versions.
+
+Failure behaviour:
+Without acknowledgement, export remains blocked.
+
+Independent verification:
+Verification report records acknowledgement and assurance ceiling.
+
+Threat coverage:
+False confidence.
+
+Assurance effect:
+Required for derivative export.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-001] Executed Block Manifest Audit
+Stage:
+Verification
+
+Input:
+ExecutionContext
+
+Output:
+Manifest verification result
+
+Specific action:
+Confirm that every required block and exact version executed in a valid order for the selected preset and output type.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Missing, unknown or out-of-order mandatory block fails verification.
+
+Independent verification:
+Recompute expected manifest from the signed preset definition.
+
+Threat coverage:
+Bypass, agent wiring error.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-002] Canonical Revision Link Audit
+Stage:
+Verification
+
+Input:
+All artifacts
+
+Output:
+Revision verification result
+
+Specific action:
+Confirm every output artifact was derived from the same approved Canonical Document revision and no post-verification edit occurred.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Mismatch fails verification.
+
+Independent verification:
+Compare immutable revision identifiers and content digests within session.
+
+Threat coverage:
+Stale output, mixed revisions.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-003] Final Metadata Re-scan
+Stage:
+Verification
+
+Input:
+Exact final image bytes
+
+Output:
+Metadata verification result
+
+Specific action:
+Reopen the actual final file and enumerate all metadata, chunks, thumbnails and profiles. Compare against the strict allowlist.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Any unexpected metadata fails high-assurance verification.
+
+Independent verification:
+Use more than one parser in test infrastructure where practical.
+
+Threat coverage:
+Metadata injection and serializer mistakes.
+
+Assurance effect:
+Required for image.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-004] Final Unicode Re-scan
+Stage:
+Verification
+
+Input:
+Exact final text bytes or OCR result from final image
+
+Output:
+Unicode verification result
+
+Specific action:
+Run scalar, default-ignorable, script, confusable, whitespace and punctuation checks on the final representation.
+
+User/configuration controls:
+Approved exception set only.
+
+Failure behaviour:
+Unexpected finding fails or lowers assurance according to semantic impact.
+
+Independent verification:
+Compare against approved canonical policy.
+
+Threat coverage:
+Unicode, confusable and punctuation channels.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-005] Final URL Re-scan
+Stage:
+Verification
+
+Input:
+Final text or OCR-extracted image text
+
+Output:
+URL verification result
+
+Specific action:
+Extract and parse final URLs again. Confirm removed query, path, fragment or subdomain data did not reappear through serialization or rendering.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Mismatch fails verification.
+
+Independent verification:
+Compare final parsed components with approved URL decisions.
+
+Threat coverage:
+URL tracing.
+
+Assurance effect:
+Required when URLs exist.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-006] OCR Round-Trip Verification
+Stage:
+Verification
+
+Input:
+Final rebuilt image
+
+Output:
+OCR comparison result
+
+Specific action:
+Run OCR on the exact encoded output image and compare recognized text and reading order with the approved canonical text. Classify differences; do not silently accept them.
+
+User/configuration controls:
+Review tolerance policy is corpus-calibrated.
+
+Failure behaviour:
+Meaningful divergence requires rerender or user review.
+
+Independent verification:
+Human-readable diff plus test corpus regression.
+
+Threat coverage:
+Renderer-induced text corruption.
+
+Assurance effect:
+Required for rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-007] Source URI and Filename Reference Audit
+Stage:
+Verification
+
+Input:
+OutputBundle and runtime object graph
+
+Output:
+Reference audit result
+
+Specific action:
+Confirm output does not expose source URI, untrusted filename, provider authority, source cache path or source session data.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Any source reference is fatal.
+
+Independent verification:
+Inspect outgoing Intent, report and artifact metadata.
+
+Threat coverage:
+Source provenance leakage.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-008] Source Pixel Dependency Audit
+Stage:
+Verification
+
+Input:
+Renderer operation log, dependency map and final artifact
+
+Output:
+Dependency verification result
+
+Specific action:
+Confirm that every source-derived pixel operation corresponds to an explicitly approved retained region. Report all such regions.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Undeclared dependency is fatal for rebuilt-image assurance.
+
+Independent verification:
+Cross-check operation log, region manifest and rendering composition records.
+
+Threat coverage:
+Hidden source pixel retention.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-009] Machine-Readable Code Re-scan
+Stage:
+Verification
+
+Input:
+Final image
+
+Output:
+Barcode verification result
+
+Specific action:
+Scan final output for QR/barcodes and compare decoded values with approved decisions.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Unexpected code fails strict verification.
+
+Independent verification:
+Independent decode of final encoded artifact.
+
+Threat coverage:
+QR and barcode tracing.
+
+Assurance effect:
+Required in strict image profile.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-010] Visual Diff and Region Coverage
+Stage:
+Verification
+
+Input:
+Source preview, final preview and region model
+
+Output:
+Coverage report
+
+Specific action:
+Show which source regions were removed, rebuilt, replaced or retained. This is explanatory and not a watermark-proof detector.
+
+User/configuration controls:
+User-facing overlay.
+
+Failure behaviour:
+Missing region classification lowers assurance.
+
+Independent verification:
+Every source region has a terminal policy.
+
+Threat coverage:
+Unknown image-region leakage.
+
+Assurance effect:
+Required for rebuilt image.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-011] Idempotence Check
+Stage:
+Verification
+
+Input:
+Final canonical text or rebuilt canonical input
+
+Output:
+Idempotence result
+
+Specific action:
+Run canonical normalization logic again and require no additional changes for deterministic canonical output.
+
+User/configuration controls:
+Strict profiles.
+
+Failure behaviour:
+Additional changes indicate inconsistent block ordering or non-idempotent rules and fail verification.
+
+Independent verification:
+Compare second-pass ledger with empty expected changes.
+
+Threat coverage:
+Unstable canonicalization, agent implementation bugs.
+
+Assurance effect:
+Required for canonical text.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-012] No-Network Runtime Check
+Stage:
+Verification
+
+Input:
+Runtime/network instrumentation in test build
+
+Output:
+Offline verification result
+
+Specific action:
+Confirm strict offline workflows complete without network access and no model is downloaded on demand.
+
+User/configuration controls:
+No user setting in strict build.
+
+Failure behaviour:
+Any network attempt fails release acceptance.
+
+Independent verification:
+Automated instrumented test under blocked network plus traffic capture.
+
+Threat coverage:
+Cloud leakage, model-download surprise.
+
+Assurance effect:
+Release control.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-013] Sensitive Logging Audit
+Stage:
+Verification
+
+Input:
+Application logs and source scan
+
+Output:
+Logging verification result
+
+Specific action:
+Check that raw text, URLs, OCR crops, filenames, URIs and image bytes do not appear in logs, crash breadcrumbs or analytics.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Sensitive log evidence blocks release.
+
+Independent verification:
+Static checks plus dynamic test sessions with canary secrets.
+
+Threat coverage:
+Local and telemetry leakage.
+
+Assurance effect:
+Release control.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-014] Assurance Classifier
+Stage:
+Verification
+
+Input:
+All verification results and dependency map
+
+Output:
+Computed assurance class
+
+Specific action:
+Apply deterministic rules to compute AS-0 through AS-4. Users cannot override upward; failures may only downgrade.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+Unknown state defaults to lower assurance.
+
+Independent verification:
+Unit-test every assurance rule and contradictory state.
+
+Threat coverage:
+Misleading product claims.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[VER-015] Human-Readable Verification Report
+Stage:
+Verification
+
+Input:
+Verification results
+
+Output:
+Final report
+
+Specific action:
+Generate a concise summary and an expandable technical report. Describe executed facts and remaining limitations without claiming anonymity.
+
+User/configuration controls:
+Detail level.
+
+Failure behaviour:
+Report-generation failure does not erase raw verification status; verified export may proceed only if the status remains visible.
+
+Independent verification:
+Report fields are cross-checked with machine-readable results.
+
+Threat coverage:
+Communication failure and false confidence.
+
+Assurance effect:
+Required UX control.
+
+----------------------------------------------------------------------------------------------------
+
+[EXP-001] Output Preview Gate
+Stage:
+Export
+
+Input:
+Verified OutputBundle
+
+Output:
+Preview approval
+
+Specific action:
+Present exact final text/image, assurance, unresolved findings and retained source regions before sharing.
+
+User/configuration controls:
+User can return to review.
+
+Failure behaviour:
+Any edit from preview invalidates verification.
+
+Independent verification:
+Preview artifact digest matches share artifact digest.
+
+Threat coverage:
+Stale preview or last-second mutation.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[EXP-002] Android Sharesheet Launch
+Stage:
+Export
+
+Input:
+Approved share Intent
+
+Output:
+System Sharesheet
+
+Specific action:
+Launch the Android system Sharesheet for destination selection. Do not create a custom share-target directory.
+
+User/configuration controls:
+No user settings.
+
+Failure behaviour:
+On failure, keep verified artifact in session and offer retry or explicit save.
+
+Independent verification:
+Outgoing Intent is inspected immediately before launch.
+
+Threat coverage:
+Custom target tracking, inconsistent share UX.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[EXP-003] Explicit Save Copy
+Stage:
+Export
+
+Input:
+Verified artifact
+
+Output:
+User-selected persistent output
+
+Specific action:
+Save only after explicit user action through an approved platform storage flow. Generate a safe output name; do not reuse the source filename.
+
+User/configuration controls:
+Save text, image and optional separate report.
+
+Failure behaviour:
+Save failure leaves ephemeral output intact for retry.
+
+Independent verification:
+Reopen saved copy and compare digest/content with verified artifact.
+
+Threat coverage:
+Accidental persistence, filename leakage.
+
+Assurance effect:
+Optional.
+
+----------------------------------------------------------------------------------------------------
+
+[SYS-003] Normal Session Purge
+Stage:
+Lifecycle
+
+Input:
+Completed or cancelled session
+
+Output:
+Deleted session workspace
+
+Specific action:
+Delete source copy, OCR views, render intermediates, temporary reports, transient outputs and in-memory references according to lifecycle policy.
+
+User/configuration controls:
+User-explicitly-saved output is excluded.
+
+Failure behaviour:
+Record only path-neutral deletion failure diagnostics.
+
+Independent verification:
+Enumerate workspace after purge.
+
+Threat coverage:
+Residual sensitive data.
+
+Assurance effect:
+Required.
+
+----------------------------------------------------------------------------------------------------
+
+[SYS-004] Share Grant Expiry Cleanup
+Stage:
+Lifecycle
+
+Input:
+Share completion lifecycle
+
+Output:
+Reduced share cache
+
+Specific action:
+Remove share artifacts after the product’s safe expiry policy while respecting temporary receiver access behaviour.
+
+User/configuration controls:
+Policy is platform-tested, not guessed.
+
+Failure behaviour:
+Do not revoke before the target can read; do not retain indefinitely.
+
+Independent verification:
+Instrumented cross-app sharing tests.
+
+Threat coverage:
+Premature failure or excessive retention.
+
+Assurance effect:
+Required.
+
+
+====================================================================================================
+10. APPROVED PRESET SEQUENCES
+====================================================================================================
+10.1 PRESET-TT-BALANCED — Text to Canonical Text
+
+SYS-001
+IN-001 or IN-004
+IN-005
+IN-006
+TXT-001
+TXT-002
+TXT-003
+TXT-004
+TXT-005
+TXT-006
+TXT-007
+TXT-008
+TXT-009
+URL-001
+URL-002
+URL-003
+URL-004
+URL-005
+URL-006
+URL-007
+URL-008
+URL-009
+CAN-001
+CAN-002
+TXT-010
+TXT-011
+TXT-012
+TXT-013
+TXT-014
+TXT-015
+TXT-016
+URL-010
+URL-014
+URL-015 when required
+REV-001 when required
+REV-002 when required
+REV-004 when required
+REV-007
+REV-008
+TXT-017
+OUT-TXT-001
+OUT-TXT-002
+OUT-BND-001
+VER-001
+VER-002
+VER-004
+VER-005
+VER-007
+VER-011
+VER-014
+VER-015
+EXP-001
+EXP-002
+SYS-003
+
+10.2 PRESET-TT-STRICT-URL
+
+Use PRESET-TT-BALANCED plus:
+URL-010
+URL-011
+URL-012
+URL-013
+URL-014
+URL-015
+
+Strict policy:
+- unknown query removed after review;
+- fragment removed;
+- userinfo removed;
+- suspicious or personalised subdomain removed;
+- path reduced or origin-only;
+- opaque short links remain a warning or are converted to non-clickable text.
+
+10.3 PRESET-TI-REBUILT — Text to Rebuilt Image
+
+Use canonical text sequence through TXT-017, then:
+REN-001
+REN-002
+REN-003
+REN-004
+REN-006 as needed
+REN-008
+REN-009
+REN-010
+REN-011
+OUT-IMG-001
+OUT-BND-001
+VER-001
+VER-002
+VER-003
+VER-004 using OCR of final image
+VER-005
+VER-006
+VER-007
+VER-008
+VER-009
+VER-010
+VER-014
+VER-015
+EXP-001
+EXP-002
+SYS-003
+
+10.4 PRESET-IT-CANONICAL — Image to Canonical Text
+
+SYS-001
+IN-002 or IN-003
+IN-005
+IN-006
+IN-007
+IMG-001
+IMG-002
+IMG-003
+IMG-004
+IMG-005
+IMG-006
+IMG-009
+IMG-010
+IMG-011 when configured
+IMG-012
+IMG-013
+IMG-014
+IMG-015
+IMG-016
+CAN-001
+CAN-002
+TXT-001 through TXT-009
+URL-001 through URL-009
+REV-003
+REV-005 when required
+TXT-010 through TXT-016
+URL-010 through URL-015 according to policy
+REV-001
+REV-002
+REV-004
+REV-007
+REV-008
+TXT-017
+OUT-TXT-001
+OUT-TXT-002
+OUT-BND-001
+VER-001
+VER-002
+VER-004
+VER-005
+VER-007
+VER-011
+VER-014
+VER-015
+EXP-001
+EXP-002
+SYS-003
+
+10.5 PRESET-II-FULL-REBUILD — Image to Rebuilt Image
+
+Use PRESET-IT-CANONICAL through TXT-017, then:
+IMG-017
+IMG-018 when useful
+REV-006
+REV-008
+REN-001
+REN-002
+REN-003
+REN-004
+REN-005 where supported
+REN-006
+REN-007 only when explicitly approved
+REN-008
+REN-009
+REN-010
+REN-011
+OUT-IMG-001
+OUT-BND-001
+VER-001 through VER-011 as applicable
+VER-014
+VER-015
+EXP-001
+EXP-002
+SYS-003
+
+10.6 PRESET-II-DERIVATIVE — Experimental Appearance-Preserving Output
+
+SYS-001
+IN-002 or IN-003
+IN-005
+IN-006
+IN-007
+IMG-001 through IMG-008
+DER-001
+DER-002
+DER-003 when preset enables
+DER-004 when preset enables
+DER-005
+DER-006
+OUT-IMG-001
+OUT-BND-001
+VER-001
+VER-003
+VER-007
+VER-008
+VER-009
+VER-010
+VER-014
+VER-015
+EXP-001
+EXP-002
+SYS-003
+
+This preset can never produce AS-3 or AS-4.
+
+
+====================================================================================================
+11. WORKFLOW EDITOR RULES
+====================================================================================================
+11.1 User-visible palette categories
+
+- Input
+- Text inspection
+- URL analysis
+- Image inspection
+- OCR
+- Canonicalization
+- Review
+- Rendering
+- Derivative processing
+- Verification
+- Export
+- Lifecycle
+
+11.2 Add block behaviour
+
+When the user taps Add Block:
+- show only blocks compatible with the current input/output mode;
+- show allowed insertion ranges;
+- explain assurance impact;
+- show whether the block is already present;
+- disallow duplicate singleton blocks;
+- require a preset name before saving a custom workflow.
+
+11.3 Reorder behaviour
+
+Reordering is constrained by:
+- phase;
+- data prerequisites;
+- review dependencies;
+- serialization order;
+- verification-after-output requirement;
+- cleanup-last requirement.
+
+Examples:
+- URL extraction cannot move after final text serialization.
+- OCR cannot move before image decode.
+- metadata re-scan cannot move before image serialization.
+- assurance classification cannot move before required verification.
+- session purge cannot move before export.
+
+11.4 Preset file
+
+Preset data contains:
+- presetId
+- presetVersion
+- displayName
+- compatibleInputs
+- compatibleOutputs
+- ordered block references
+- settings per block
+- minimum app version
+- schema version
+- assurance ceiling
+- external plug-in allowance
+- migration history
+
+Preset data must not contain source content.
+Preset import validates all block IDs and versions.
+Unsigned community presets are never treated as high-assurance defaults.
+
+
+====================================================================================================
+12. VERIFICATION STRATEGY
+====================================================================================================
+12.1 Verification principles
+
+V-P-001  Inspect final artifacts, not merely function return values.
+V-P-002  Use an independent parser or code path where practical.
+V-P-003  Treat OCR as untrusted and verify rendering with round-trip comparison.
+V-P-004  Treat absence of detector findings as “not detected”, not “absent”.
+V-P-005  Every claim shown in the UI maps to a verification result.
+V-P-006  Every semantic change maps to a change-ledger entry.
+V-P-007  Every retained source region maps to a user decision.
+V-P-008  Every workflow has a tested assurance ceiling.
+V-P-009  Verification failure downgrades or blocks; it never silently retries with weaker rules.
+V-P-010  Release tests include malicious and malformed inputs.
+
+12.2 Required verification layers
+
+Layer A — Structural
+- workflow manifest valid;
+- required blocks present;
+- block versions recognized;
+- output revision current.
+
+Layer B — Content
+- final Unicode scan;
+- final URL parse;
+- OCR round-trip;
+- barcode re-scan;
+- reading-order comparison.
+
+Layer C — Container
+- actual metadata inventory;
+- embedded thumbnail absence;
+- channel/alpha model;
+- allowed chunk set;
+- output decodes independently.
+
+Layer D — Provenance
+- no source URI;
+- no untrusted filename;
+- no source provider authority;
+- no unexplained source pixels;
+- no stable session/device seed.
+
+Layer E — Privacy engineering
+- offline execution;
+- sensitive logging audit;
+- app-private storage;
+- cleanup success;
+- temporary share permission scope.
+
+12.3 Verification status vocabulary
+
+PASS
+The specified check completed and matched its approved condition.
+
+PASS_WITH_DECLARED_RESIDUAL
+The check completed and a documented residual is intentionally retained.
+
+REVIEW_REQUIRED
+The check found an ambiguity requiring user input.
+
+NOT_APPLICABLE
+The check does not apply to this output.
+
+NOT_RUN
+The check did not execute. This prevents a verified assurance class when required.
+
+FAIL
+The specified condition was violated.
+
+ERROR
+The verifier could not establish a result. Treat as failure for assurance purposes.
+
+12.4 No-detector rule
+
+Frequency, LSB or watermark detectors may be useful comparative diagnostics, but:
+- they do not certify cleanliness;
+- their thresholds require corpus calibration;
+- they are not mandatory for canonical text or fully rebuilt textual images;
+- they cannot promote assurance;
+- a detector miss is not evidence of absence.
+
+
+====================================================================================================
+13. ADVERSARIAL TEST CORPUS
+====================================================================================================
+13.1 Corpus organization
+
+Each case contains:
+- caseId
+- threat category
+- language/script
+- source representation
+- intended visible meaning
+- expected canonical text
+- expected URL decisions
+- expected region decisions
+- expected assurance ceiling
+- expected mandatory reviews
+- prohibited output residue
+- reference renderer version
+- test licence/provenance
+
+13.2 Required text cases
+
+TC-TXT-001  Zero-width characters between selected letters.
+TC-TXT-002  Directional controls that reorder display.
+TC-TXT-003  Soft hyphens and word joiners.
+TC-TXT-004  Multiple Unicode space classes.
+TC-TXT-005  Mixed newline encodings.
+TC-TXT-006  Latin word containing Cyrillic confusables.
+TC-TXT-007  Latin word containing Greek confusables.
+TC-TXT-008  Genuine Greek sentence that must not be Latinized.
+TC-TXT-009  Genuine Cyrillic sentence that must not be Latinized.
+TC-TXT-010  Combining-mark variants.
+TC-TXT-011  Full-width and half-width variants.
+TC-TXT-012  Quote, dash and apostrophe variants.
+TC-TXT-013  Ellipsis as one character versus repeated dots.
+TC-TXT-014  Code block where whitespace must remain.
+TC-TXT-015  Mathematical minus versus dash.
+TC-TXT-016  Identifier where confusable replacement changes meaning.
+TC-TXT-017  Styled Android span containing hidden alternate text.
+TC-TXT-018  HTML clipboard with different visible and link values.
+TC-TXT-019  Long text with repeated subtle punctuation code.
+TC-TXT-020  Multiple individually weak markers for cross-sample correlation.
+
+13.3 Required URL cases
+
+TC-URL-001  Known tracking query.
+TC-URL-002  Unknown high-entropy query.
+TC-URL-003  Identifier in path.
+TC-URL-004  Identifier in subdomain.
+TC-URL-005  Fragment identifier.
+TC-URL-006  Deceptive userinfo.
+TC-URL-007  Internationalized-domain confusable.
+TC-URL-008  Multi-label public suffix.
+TC-URL-009  Percent-encoded identifier.
+TC-URL-010  Short redirect URL.
+TC-URL-011  Functional invite URL that breaks in origin-only mode.
+TC-URL-012  Markdown link where display text differs from target.
+TC-URL-013  QR code containing personalized URL.
+TC-URL-014  URL split by line wrapping.
+TC-URL-015  Schemeless domain in normal prose.
+
+13.4 Required image cases
+
+TC-IMG-001  Metadata-only identifier.
+TC-IMG-002  Embedded unredacted thumbnail.
+TC-IMG-003  Alpha-channel hidden content.
+TC-IMG-004  Low-bit-plane structured pattern.
+TC-IMG-005  Repeated small spatial blocks.
+TC-IMG-006  Frequency-domain watermark benchmark sample.
+TC-IMG-007  One-pixel font variants.
+TC-IMG-008  OCR conflict between Latin and Greek/Cyrillic.
+TC-IMG-009  Screenshot with chat bubbles and avatar.
+TC-IMG-010  Screenshot with URL and QR code.
+TC-IMG-011  Screenshot with map and location marker.
+TC-IMG-012  Multicolumn article.
+TC-IMG-013  Dark mode and light mode variants of same semantics.
+TC-IMG-014  Different viewport widths causing line wraps.
+TC-IMG-015  Source image with malformed metadata chunks.
+TC-IMG-016  Very large dimensions under resource guard.
+TC-IMG-017  Animated input.
+TC-IMG-018  Colour-profile variation.
+TC-IMG-019  Image with an unknown region that must not be silently retained.
+TC-IMG-020  Same semantic content rendered by different devices.
+
+13.5 Convergence tests
+
+For every convergence family:
+- create multiple source variants with the same intended semantic content;
+- run the same preset;
+- compare canonical text for exact equality where policy permits;
+- compare rebuilt-image semantic structure and renderer determinism;
+- verify that source-specific URLs, code points, metadata and source pixels do not remain;
+- document intentional differences caused by user-approved language or content.
+
+13.6 Mutation tests
+
+Mutate:
+- block order;
+- block version;
+- metadata allowlist;
+- URL parser output;
+- Canonical Document revision;
+- renderer source-dependency flags;
+- outgoing Intent MIME;
+- cleanup policy.
+
+Expected:
+Verification or pipeline validation must catch the mutation.
+
+13.7 Canary privacy tests
+
+Inject unique canary values into:
+- source filename;
+- source URI;
+- metadata;
+- URL query;
+- hidden Unicode;
+- OCR crop;
+- session path.
+
+Search:
+- logs;
+- crash output;
+- reports;
+- saved output;
+- outgoing Intent;
+- app cache after purge.
+
+Acceptance:
+No canary appears outside its approved final visible content and session-limited review surfaces.
+
+
+====================================================================================================
+14. QUALITY AND ACCEPTANCE CRITERIA
+====================================================================================================
+The project must not use arbitrary quality thresholds chosen by a coding agent.
+Thresholds for OCR consensus, diagnostic detectors, image quality and resource budgets must be derived from the maintained test corpus and documented benchmark runs.
+
+Functional acceptance:
+
+AC-F-001  Text share enters as TEXT without requiring media permission.
+AC-F-002  Image share enters as IMAGE through a content URI.
+AC-F-003  The selected output type is always visible.
+AC-F-004  A workflow cannot form a branch or cycle.
+AC-F-005  Mandatory blocks cannot be removed.
+AC-F-006  Invalid block order is rejected before execution.
+AC-F-007  Every semantic change appears in the diff.
+AC-F-008  Every retained source region appears in the report.
+AC-F-009  Text and image outputs in BOTH mode share one canonical revision.
+AC-F-010  Share uses the system Sharesheet.
+AC-F-011  Save is explicit and separate from share.
+AC-F-012  Session purge removes transient artifacts.
+
+Security acceptance:
+
+AC-S-001  Strict workflows complete without network.
+AC-S-002  No raw source data appears in normal logs.
+AC-S-003  No output exposes the source URI or filename.
+AC-S-004  Output image metadata matches the allowlist after re-scan.
+AC-S-005  Final text contains no unapproved invisible controls.
+AC-S-006  Final URLs match approved parsed components.
+AC-S-007  Rebuilt-image source dependencies are complete and accurate.
+AC-S-008  Verification failure cannot show a high assurance badge.
+AC-S-009  Derivative mode cannot exceed derivative assurance.
+AC-S-010  External plug-ins cannot enter the high-assurance preset.
+AC-S-011  Bundled renderer never silently falls back to a device font.
+AC-S-012  Random perturbation never uses a stable device-derived seed.
+
+UX acceptance:
+
+AC-U-001  A non-expert can identify input type, output type and current stage.
+AC-U-002  “Detected”, “Changed” and “Verified” are visually distinct.
+AC-U-003  URL changes show functionality warnings.
+AC-U-004  Character review exposes code point and script details in expert disclosure.
+AC-U-005  Source-pixel retention is visible before export.
+AC-U-006  No screen claims guaranteed anonymity.
+AC-U-007  Every fatal error offers discard and a safe alternative output when feasible.
+AC-U-008  TalkBack/accessible labels describe block status and review actions.
+AC-U-009  Colour is not the only status indicator.
+AC-U-010  Large text and landscape layouts remain usable.
+
+Agent acceptance:
+
+AC-A-001  Each pull request changes one bounded work package.
+AC-A-002  New dependencies include licence, maintenance and offline analysis.
+AC-A-003  New blocks include contract, tests, invalidation rules and verification.
+AC-A-004  Canonical schema changes include migration tests.
+AC-A-005  Security-sensitive behaviour includes adversarial tests.
+AC-A-006  No agent implements a custom Unicode confusable database, URL parser, OCR engine or image codec without explicit approval.
+
+
+====================================================================================================
+15. ANDROID IMPLEMENTATION ARCHITECTURE
+====================================================================================================
+15.1 Recommended modules
+
+:app
+:core:model
+:core:pipeline
+:core:session
+:core:security
+:core:storage
+:core:testing
+:core:ui
+:feature:entry
+:feature:workflow
+:feature:review
+:feature:preview
+:feature:report
+:feature:export
+:block:input
+:block:text-inspect
+:block:text-normalize
+:block:url
+:block:image-decode
+:block:image-inspect
+:block:ocr
+:block:layout
+:block:canonical
+:block:render
+:block:derivative
+:block:verify
+:block:lifecycle
+:benchmark
+:test-corpus
+
+15.2 Architectural boundaries
+
+UI layer:
+- Compose screens;
+- immutable UI state;
+- user intents;
+- no direct file parsing;
+- no direct bitmap mutation;
+- no security claim calculation.
+
+Domain layer:
+- pipeline validation;
+- block execution;
+- review policy;
+- assurance rules;
+- Canonical Document;
+- change ledger.
+
+Data/infrastructure layer:
+- content resolver;
+- app-private storage;
+- image codecs;
+- OCR adapters;
+- Unicode library;
+- URL parser;
+- metadata parsers;
+- FileProvider;
+- cleanup.
+
+15.3 Execution strategy
+
+Interactive foreground work:
+- coroutines;
+- structured cancellation;
+- lifecycle-aware state;
+- bounded dispatcher pools.
+
+Long-running or resumable work:
+- platform-recommended persistent work mechanism only when required;
+- do not turn every small block into a separate persistent worker;
+- persist only non-sensitive execution state necessary to resume;
+- a resumed session must revalidate source integrity and permissions.
+
+15.4 Permission strategy
+
+Default build:
+- no broad photo-library permission;
+- no INTERNET permission;
+- content URI input;
+- Photo Picker;
+- app-private cache;
+- FileProvider output;
+- temporary read grant.
+
+Any future network feature:
+- separate product edition or explicit threat-model revision;
+- clear UI;
+- opt-in;
+- endpoint review;
+- data minimization;
+- cannot silently replace bundled OCR.
+
+15.5 Dependency policy
+
+Before adding a dependency, the agent must record:
+- exact purpose;
+- official project;
+- licence;
+- maintenance status;
+- Android compatibility;
+- offline behaviour;
+- transitive network behaviour;
+- data handling;
+- binary size impact measured by build;
+- alternatives;
+- removal plan.
+
+Prefer mature components for:
+- Unicode normalization and spoof checking;
+- URL parsing;
+- image decoding;
+- metadata parsing;
+- OCR;
+- barcode scanning;
+- Android storage and sharing.
+
+Do not recreate these from scratch.
+
+
+====================================================================================================
+16. AGENT-AI WORK PACKAGES
+====================================================================================================
+WP-000 — Threat Model and Claims
+
+Deliverables:
+- threat catalog;
+- assurance rules;
+- claim vocabulary;
+- non-goals;
+- threat-to-block matrix;
+- security review checklist.
+
+Definition of done:
+- every UI claim maps to a verifier;
+- derivative mode cannot be promoted;
+- unknown watermark limitation is explicit.
+
+WP-010 — Repository and Build Foundation
+
+Deliverables:
+- modular Gradle project;
+- Kotlin and Compose baseline;
+- version catalog;
+- static analysis;
+- unit/instrumented test setup;
+- dependency reporting;
+- reproducible release configuration.
+
+Restrictions:
+- no analytics;
+- no account;
+- no cloud backend;
+- no INTERNET permission.
+
+WP-020 — Core Models
+
+Deliverables:
+- ExecutionContext;
+- Finding;
+- ChangeEntry;
+- CanonicalDocument;
+- OutputBundle;
+- VerificationReport;
+- serializers for non-sensitive workflow configuration.
+
+Tests:
+- immutability;
+- schema round-trip;
+- invalid-reference rejection;
+- revision lineage.
+
+WP-030 — Pipeline Engine
+
+Deliverables:
+- block interface;
+- registry;
+- type predicates;
+- sequence validator;
+- execution state;
+- cancellation;
+- invalidation;
+- preset migration;
+- assurance ceiling propagation.
+
+Tests:
+- no cycles;
+- no invalid order;
+- mandatory-block enforcement;
+- downstream invalidation;
+- fatal failure blocking.
+
+WP-040 — Entry and Secure Import
+
+Deliverables:
+- text share;
+- image share;
+- plain editor;
+- Photo Picker;
+- signature validation;
+- app-private import;
+- resource guard;
+- source seal.
+
+Tests:
+- malformed Intent;
+- expired URI;
+- deceptive filename;
+- provider mutation;
+- unsupported format;
+- memory guard.
+
+WP-050 — Workflow UI
+
+Deliverables:
+- persistent Input → Output header;
+- ordered cards;
+- status model;
+- block detail;
+- constrained add/reorder;
+- Simple, Review and Advanced modes;
+- accessibility.
+
+Tests:
+- no free graph;
+- assurance ceiling updates;
+- invalid block move rejected;
+- TalkBack labels.
+
+WP-060 — Unicode Inspection
+
+Deliverables:
+- scalar inventory;
+- grapheme analysis;
+- default-ignorable scan;
+- whitespace taxonomy;
+- script/confusable scan;
+- punctuation inventory;
+- language policy.
+
+Tests:
+Use all TC-TXT cases relevant to inspection.
+
+WP-070 — Text Normalization and Review
+
+Deliverables:
+- protected spans;
+- Unicode normalization;
+- ignorable removal;
+- token-level confusable handling;
+- whitespace/punctuation/line structure;
+- review screens;
+- canonical lock.
+
+Tests:
+- idempotence;
+- genuine multilingual preservation;
+- code/maths protection;
+- full change ledger.
+
+WP-080 — URL System
+
+Deliverables:
+- extractor;
+- maintained parser adapter;
+- suffix/domain boundary;
+- query/path/subdomain inventory;
+- spoof check;
+- strict and origin-only policies;
+- URL review;
+- final serializer.
+
+Tests:
+Use all TC-URL cases.
+No network resolution in default build.
+
+WP-090 — Image Decoder and Metadata
+
+Deliverables:
+- header probe;
+- controlled decode;
+- orientation materialization;
+- metadata inventory;
+- thumbnail scan;
+- colour/alpha inventory;
+- resource cleanup.
+
+Tests:
+Malformed and adversarial image containers.
+
+WP-100 — OCR and Layout
+
+Deliverables:
+- OCR view generator;
+- bundled OCR adapter;
+- optional independent adapter;
+- consensus;
+- text geometry;
+- reading order;
+- QR/barcode;
+- non-text segmentation;
+- dependency map.
+
+Tests:
+- mixed scripts;
+- tiny glyph differences;
+- multi-column;
+- chat;
+- URL;
+- QR;
+- low-confidence review.
+
+WP-110 — Canonical Document UI
+
+Deliverables:
+- block types;
+- reading-order editor;
+- image region policies;
+- source/canonical diff;
+- semantic review;
+- assurance consequence gate.
+
+WP-120 — Rebuilt Renderer
+
+Deliverables:
+- fresh canvas;
+- bundled font resolver;
+- controlled shaping;
+- generic layouts;
+- placeholders/redactions;
+- source-region import with lineage;
+- alpha flatten;
+- colour conversion;
+- fresh serializer;
+- metadata allowlist.
+
+Tests:
+- no system-font fallback;
+- no source-buffer alias;
+- source dependency accuracy;
+- deterministic semantic output;
+- glyph coverage.
+
+WP-130 — Derivative Experimental Mode
+
+Deliverables:
+- resample;
+- channel canonicalization;
+- quantization;
+- ephemeral noise;
+- fresh encode;
+- mandatory warning.
+
+Restrictions:
+- never default;
+- never high assurance;
+- benchmark wording;
+- no “watermark removed” claim.
+
+WP-140 — Verification Framework
+
+Deliverables:
+- manifest audit;
+- revision audit;
+- metadata re-scan;
+- Unicode re-scan;
+- URL re-scan;
+- OCR round-trip;
+- source reference audit;
+- pixel dependency audit;
+- barcode re-scan;
+- idempotence;
+- assurance classifier;
+- report.
+
+Tests:
+Every verifier must have a deliberately failing fixture.
+
+WP-150 — Export and Cleanup
+
+Deliverables:
+- preview gate;
+- Android Sharesheet;
+- secure content URI;
+- explicit save;
+- normal purge;
+- crash purge;
+- share-cache expiry cleanup.
+
+Tests:
+Cross-app share, cancellation, process death and cleanup.
+
+WP-160 — Adversarial Corpus and Benchmark
+
+Deliverables:
+- corpus repository;
+- generators for Unicode, punctuation, URL and metadata variants;
+- licensed watermark research samples;
+- convergence metrics;
+- OCR disagreement metrics;
+- derivative diagnostic comparison;
+- benchmark report.
+
+Rule:
+No product threshold is accepted without documented corpus evidence.
+
+WP-170 — Release Security Review
+
+Deliverables:
+- mobile-security-standard checklist;
+- storage audit;
+- logging audit;
+- offline audit;
+- dependency audit;
+- software bill of materials;
+- licence review;
+- reproducible build evidence;
+- privacy policy and threat-model documentation.
+
+WP-180 — UX Research
+
+Deliverables:
+- usability test tasks;
+- comprehension test for assurance labels;
+- review burden analysis;
+- accessibility audit;
+- error-recovery test;
+- source-pixel-retention comprehension test.
+
+Success is based on observed user understanding, not developer assumption.
+
+
+====================================================================================================
+17. AGENT PROMPTING AND CHANGE CONTROL
+====================================================================================================
+17.1 Required agent task template
+
+Task ID:
+Related work package:
+Allowed modules:
+Prohibited modules:
+Input contracts:
+Output contracts:
+Block IDs affected:
+Threats addressed:
+Security claims affected:
+Required tests:
+Required documentation:
+Dependencies allowed:
+Acceptance criteria:
+Rollback plan:
+
+17.2 Pull request rules
+
+- One bounded purpose per pull request.
+- No unrelated refactoring.
+- No new dependency without dependency record.
+- No change to assurance rules without security-review approval.
+- No Canonical Document schema change without migration.
+- No block ID reuse.
+- No logging of sample content.
+- No network permission.
+- No hidden feature flag that bypasses verification.
+- No hard-coded detector threshold without benchmark evidence.
+- No broad storage permission.
+- No custom share-target list.
+- No silent device-font fallback.
+- No persistent random seed for output variation.
+
+17.3 Review roles
+
+Architecture reviewer:
+Checks module boundaries and sequence engine.
+
+Security reviewer:
+Checks threat mapping, claims, storage, logs, network and assurance.
+
+UX reviewer:
+Checks user understanding, review burden and accessibility.
+
+Test reviewer:
+Checks adversarial fixtures and verifier failures.
+
+Licence reviewer:
+Checks third-party reuse and distribution obligations.
+
+17.4 Definition of done for a new block
+
+A block is incomplete until it has:
+- stable ID;
+- version;
+- contract;
+- settings schema;
+- type predicate;
+- specific action;
+- failure behaviour;
+- cleanup;
+- invalidation keys;
+- threat coverage;
+- assurance impact;
+- unit tests;
+- integration test in a valid sequence;
+- negative test;
+- verifier;
+- UX label;
+- help text;
+- change-ledger output;
+- documentation.
+
+
+====================================================================================================
+18. SIMILAR PROJECTS AND REUSE BOUNDARIES
+====================================================================================================
+The implementation should study, not blindly copy, established projects and official platform capabilities.
+
+ComfyUI
+Useful:
+- node/block vocabulary;
+- workflow templates;
+- visible execution status;
+- reusable workflow components.
+Do not copy:
+- unrestricted graph interaction for the mobile security flow;
+- arbitrary custom-node execution model.
+
+ExifEraser
+Useful:
+- permission-minimizing Android image-import and metadata-removal concepts;
+- metadata-focused test cases.
+Gap:
+- no canonical text, URL policy, OCR consensus or full reconstruction.
+
+MakeACopy
+Useful:
+- privacy-oriented offline Android OCR/document workflow;
+- local processing and scanner UX references.
+Gap:
+- not designed for provenance normalization or sequence assurance.
+
+Text Fairy
+Useful:
+- OCR preprocessing and text extraction references.
+Gap:
+- older architecture and different security model.
+
+Android Now in Android and official samples
+Useful:
+- current Compose modular architecture and testing patterns.
+Gap:
+- not a privacy-normalization application.
+
+ML Kit Text Recognition
+Useful:
+- on-device text structure extraction;
+- script-specific bundled models where available.
+Rule:
+- strict offline workflows must not depend on a model download during use.
+
+ICU SpoofChecker and Unicode security specifications
+Useful:
+- script restriction levels;
+- confusable checks;
+- maintained Unicode data.
+Rule:
+- do not hard-code a permanently frozen homemade confusable table.
+
+OWASP Mobile Application Security Verification Standard and testing guidance
+Useful:
+- storage, privacy and sensitive-logging controls;
+- mobile security review structure.
+Rule:
+- adapt controls to this threat model; do not treat a checklist as proof of watermark removal.
+
+
+====================================================================================================
+19. PROHIBITED IMPLEMENTATION PATTERNS
+====================================================================================================
+ANTI-001  One “AI clean everything” block.
+Reason:
+Cannot explain, verify or isolate failure.
+
+ANTI-002  Gaussian noise as the primary defence.
+Reason:
+Does not guarantee removal of robust signals.
+
+ANTI-003  Blur or pixelation as secure deletion.
+Reason:
+May retain recoverable information and source structure.
+
+ANTI-004  Copying source bitmap then drawing over it for “reconstruction”.
+Reason:
+Hidden source pixels may remain and dependency is unclear.
+
+ANTI-005  Preserving source metadata then deleting only GPS.
+Reason:
+Other fields and chunks may carry identifiers.
+
+ANTI-006  Regex-only URL parsing.
+Reason:
+Cannot safely model all URL components and encodings.
+
+ANTI-007  Global Greek/Cyrillic-to-Latin replacement.
+Reason:
+Corrupts legitimate language and still misses contextual attacks.
+
+ANTI-008  NFKC-only Unicode defence.
+Reason:
+Does not solve all confusables, controls, punctuation and semantic differences.
+
+ANTI-009  OCR result accepted without review or consensus.
+Reason:
+OCR can normalize correctly, normalize incorrectly or retain a confusable.
+
+ANTI-010  Device-font rendering in high-assurance output.
+Reason:
+May create device-specific output and change glyph behaviour.
+
+ANTI-011  Stable per-installation random noise.
+Reason:
+Creates a new repeatable fingerprint.
+
+ANTI-012  Cloud OCR silently used as fallback.
+Reason:
+Changes the trust boundary and may leak content.
+
+ANTI-013  Trusting incoming filename or MIME.
+Reason:
+Both are attacker-controlled.
+
+ANTI-014  Verifying configuration rather than final bytes.
+Reason:
+Encoder or serializer behaviour may differ from intent.
+
+ANTI-015  Saving source by default.
+Reason:
+Creates unnecessary sensitive persistence.
+
+ANTI-016  Custom Sharesheet.
+Reason:
+Recreates platform behaviour and may introduce destination tracking.
+
+ANTI-017  Assurance chosen by the user.
+Reason:
+Assurance is evidence-based, not a preference.
+
+ANTI-018  Detector miss shown as “clean”.
+Reason:
+No detector covers all unknown channels.
+
+ANTI-019  Agent-generated thresholds without a benchmark.
+Reason:
+Creates unsupported numeric security claims.
+
+ANTI-020  External plug-in in high-assurance workflow.
+Reason:
+Breaks control over code, data access and verification.
+
+
+====================================================================================================
+20. RELEASE CHECKLIST
+====================================================================================================
+Product:
+[ ] Input type is always visible.
+[ ] Output type is always visible.
+[ ] Sequence-only UI has no hidden branch.
+[ ] Threat model and limitations are accessible.
+[ ] Derivative mode is clearly experimental.
+
+Android:
+[ ] Uses system Sharesheet.
+[ ] Uses secure content URI sharing.
+[ ] Uses temporary read grants.
+[ ] Uses Photo Picker for in-app image choice.
+[ ] Uses app-private transient storage.
+[ ] No broad media permission in default design.
+[ ] No network permission in strict offline build.
+
+Unicode:
+[ ] Unicode library version pinned.
+[ ] Confusable checks tested.
+[ ] Genuine multilingual content tested.
+[ ] Invisible controls reviewed.
+[ ] Final scan completed.
+
+URL:
+[ ] Maintained parser.
+[ ] Domain boundary data maintained.
+[ ] Query, path, subdomain, fragment and userinfo handled.
+[ ] Final URL parse matches approved decision.
+[ ] Functionality warnings tested.
+
+Image:
+[ ] Source metadata inventoried.
+[ ] Embedded thumbnail handled.
+[ ] Orientation materialized.
+[ ] Source dependency map complete.
+[ ] Bundled fonts cover output.
+[ ] No silent device-font fallback.
+[ ] Final bytes re-opened.
+[ ] Final metadata allowlist passed.
+[ ] OCR round-trip passed or residual reviewed.
+
+Privacy:
+[ ] No raw source logs.
+[ ] No source filename in output.
+[ ] No source URI in report or Intent.
+[ ] No stable random seed.
+[ ] Session purge tested.
+[ ] Crash purge tested.
+[ ] Saved output requires explicit action.
+
+Verification:
+[ ] Every verifier has a failing fixture.
+[ ] Assurance classifier fully unit-tested.
+[ ] A post-verification edit invalidates assurance.
+[ ] Unknown state downgrades.
+[ ] Report wording makes no anonymity guarantee.
+
+Agent governance:
+[ ] Work package complete.
+[ ] Dependencies reviewed.
+[ ] Licence reviewed.
+[ ] Adversarial tests added.
+[ ] Documentation updated.
+[ ] No arbitrary numeric security threshold.
+
+
+====================================================================================================
+21. IMPLEMENTATION ORDER
+====================================================================================================
+Recommended dependency order:
+
+Phase A — Foundations
+WP-000
+WP-010
+WP-020
+WP-030
+
+Phase B — Safe input and text MVP
+WP-040
+WP-050
+WP-060
+WP-070
+WP-080
+WP-140 text verifiers
+WP-150 text export
+
+First usable milestone:
+Text → Canonical Text
+
+Phase C — Image extraction
+WP-090
+WP-100
+WP-110
+
+Second usable milestone:
+Image → Canonical Text
+
+Phase D — Rebuilt image
+WP-120
+WP-140 image verifiers
+WP-150 image export
+
+Third usable milestone:
+Text/Image → Rebuilt Image
+
+Phase E — Adversarial validation
+WP-160
+WP-170
+WP-180
+
+Phase F — Experimental derivative
+WP-130 only after the high-assurance canonical paths are stable.
+
+Reason:
+The project’s unique value is semantic canonicalization and fresh reconstruction. Building a sophisticated derivative filter first would delay the safer and more testable paths.
+
+
+====================================================================================================
+22. FINAL PRODUCT RECOMMENDATION
+====================================================================================================
+The sequence-only ComfyUI-like concept is approved with the following constraint:
+
+The user sees an ordered, inspectable workflow, but the app remains a typed security pipeline rather than a general visual-programming environment.
+
+The essential product loop is:
+
+INPUT
+  Text or Image
+    ↓
+INSPECT
+  Unicode, URL, metadata, OCR, layout and regions
+    ↓
+CANONICALIZE
+  Build reviewed semantic representation
+    ↓
+RENDER
+  Canonical text and/or fresh rebuilt image
+    ↓
+VERIFY
+  Reopen final artifacts and compute assurance
+    ↓
+SHARE
+  Android system Sharesheet
+    ↓
+PURGE
+  Delete transient session data
+
+The strongest design decision is not adding more filters.
+It is ensuring that outputs are generated from an approved Canonical Document rather than inherited source representation.
+
+The app should continuously communicate three separate facts:
+
+1. What was detected.
+2. What was changed.
+3. What was verified.
+
+No interface element should collapse those three states into a single “clean” button.
+
+
+====================================================================================================
+23. SOURCE BASIS FOR THE SPECIFICATION
+====================================================================================================
+This specification was prepared using the current official or primary documentation available on 2026-07-15, including:
+
+- Android Developers: sending simple data and using the Android Sharesheet.
+- Android Developers: Photo Picker.
+- Android Developers: FileProvider and temporary content-URI permissions.
+- Android Developers: app architecture recommendations and current Compose reference applications.
+- Google ML Kit: Text Recognition v2, Android integration and bundled/unbundled model installation paths.
+- Google ML Kit: on-device barcode scanning options.
+- Unicode ICU4J: SpoofChecker and confusable/script checks.
+- OWASP Mobile Application Security Verification Standard and Mobile Application Security Testing Guide controls for storage, privacy and sensitive logging.
+- Official repositories for ComfyUI, ExifEraser, MakeACopy and Text Fairy.
+
+Implementation agents must verify the exact current API versions and dependency coordinates at implementation time. This document intentionally avoids freezing guessed library versions or unbenchmarked security thresholds.

@@ -1,0 +1,1011 @@
+====================================================================================================
+CANONICAL SHARE — ANDROID IMPLEMENTATION SPECIFICATION
+AMENDMENT: PERSISTENT VERIFIED RESULTS, RESULT MANAGEMENT, AND ELAPSED-SINCE-IMPORT AWARENESS
+====================================================================================================
+
+Amendment file:
+canonical_share_android_implementation_spec_v1.ammend.txt
+
+Amendment version:
+1.0
+
+Amendment date:
+2026-07-15
+
+Applies to:
+Canonical Share — Android Sequential Privacy-Normalization Pipeline, Draft v1.0
+
+Scope rule:
+This amendment specifies only the new persistent-result and elapsed-since-import features.
+It supersedes only baseline clauses that conflict with automatic in-app persistence of verified final
+results. All unrelated baseline requirements remain unchanged.
+
+Terminology added by this amendment:
+- Saved Result: a verified final output stored persistently in app-private storage.
+- Import Anchor: the locally recorded instant at which accepted source content entered the app session.
+- Elapsed Since Import: the duration from the Import Anchor to the current display instant.
+- Timing Awareness: a non-guarantee UI aid that helps the user notice how soon an output may be shared
+  after import.
+- Managed Share: sharing a previously saved, verified artifact from the Saved Results interface.
+
+
+====================================================================================================
+A1. PRODUCT DECISION
+====================================================================================================
+
+A1.1 Automatic persistent save
+
+After mandatory verification succeeds, the app shall automatically create a persistent Saved Result
+inside app-private storage.
+
+The persistent record shall contain only:
+- the verified canonical text artifact, when produced;
+- the verified rebuilt or derivative image artifact, when produced;
+- the final assurance class and concise assurance rationale;
+- the artifact revision and format;
+- the Import Anchor;
+- the save-completion timestamp;
+- the minimum metadata required to display, verify, share, export and delete the Saved Result;
+- an optional compact verification summary that does not reproduce sensitive source values.
+
+The persistent record shall not contain:
+- the imported source text or source image solely for history purposes;
+- OCR views;
+- source crops;
+- source filenames;
+- source content URIs;
+- clipboard variants;
+- temporary render files;
+- hidden before-values from the change ledger;
+- app session paths;
+- share-target history;
+- destination-app identity;
+- a copy of any source metadata that was removed from the final artifact.
+
+A1.2 Persistence point
+
+Automatic persistent save shall occur only after:
+1. final serialization;
+2. mandatory post-output verification;
+3. assurance computation;
+4. successful reopening of the exact bytes or text representation that will be stored.
+
+An unverified artifact may remain transient for recovery, but shall not appear as a normal Saved Result.
+A separately labelled failed or incomplete recovery record may be implemented later and is outside this
+amendment.
+
+A1.3 User control
+
+The app shall provide:
+- direct sharing from the final result screen;
+- direct sharing from the Saved Results page;
+- permanent deletion of an individual Saved Result;
+- multi-select deletion;
+- export of a user-selected copy to platform storage;
+- optional user-defined display name that is stored separately from artifact content;
+- optional pinning or favouriting for local organization.
+
+Automatic save is the default product behaviour introduced by this amendment. The final result screen
+shall clearly state that the verified result has been saved inside the app.
+
+A1.4 Security positioning
+
+The elapsed timer is an awareness control. It does not prove that timing correlation has been defeated.
+It does not know the true screenshot-capture time unless that event occurred inside a future trusted
+capture flow. For imported content, the Import Anchor begins when the app accepts the content.
+
+Permanent storage increases local-retention exposure. Therefore, the Saved Results store must use
+app-private storage, exclude source material, support immediate deletion, and avoid cloud synchronization
+unless a separate threat-model revision explicitly approves it.
+
+
+====================================================================================================
+A2. NAVIGATION AND NEW SCREENS
+====================================================================================================
+
+A2.1 Primary navigation addition
+
+Add:
+9. Saved Results
+
+The normal completion flow becomes:
+Verified Output → Automatically Saved → Share, View Saved Result, or Start New Session
+
+A2.2 Persistent destination
+
+The Saved Results destination shall be reachable from:
+- the primary navigation;
+- the final output screen;
+- a post-save confirmation action;
+- an Android launcher shortcut only if separately approved and implemented without exposing content.
+
+A2.3 UX-SCR-021 — Saved Results
+
+Purpose:
+Allow a non-expert user to find, inspect, share, export and delete verified outputs that remain inside
+the app.
+
+Default layout:
+- page title: Saved Results;
+- search action;
+- sort action;
+- filter action;
+- storage-usage summary;
+- list or grid toggle;
+- multi-select mode;
+- empty-state explanation.
+
+Each result card shall show:
+- safe preview or generic type icon;
+- user-defined display name, or an app-generated neutral label;
+- output type: TEXT, REBUILT IMAGE, BOTH or DERIVATIVE IMAGE;
+- assurance status;
+- saved date and time in the user’s current locale;
+- live Elapsed Since Import value;
+- share action;
+- overflow menu.
+
+Card overflow actions:
+- Open;
+- Share;
+- Export copy;
+- Rename display label;
+- View verification summary;
+- Delete permanently.
+
+Rules:
+- Never show the untrusted source filename.
+- Never display raw source content in a notification.
+- Do not treat a card preview as proof that the stored artifact remains verified.
+- Revalidate the stored artifact before share when integrity state is unknown or storage migration occurred.
+- Colour shall not be the only indication of assurance or timing state.
+- Large text, screen readers and landscape layouts shall remain usable.
+- The page shall not imply that a longer elapsed time guarantees anonymity.
+
+A2.4 UX-SCR-022 — Saved Result Detail
+
+Purpose:
+Provide one authoritative view of a persistent verified result.
+
+Header:
+- safe display label;
+- output type;
+- assurance badge;
+- storage state;
+- verification state.
+
+Primary content:
+- canonical text preview;
+- rebuilt or derivative image preview;
+- artifact-switching tabs when BOTH was produced;
+- verification summary;
+- unresolved limitations;
+- source-pixel-retention notice when applicable.
+
+Timing-awareness panel:
+- label: “Time since import”;
+- continuously updated elapsed duration;
+- local import date and time behind a disclosure control;
+- explanatory text: “Measured from when this content entered Canonical Share, not from when the
+  screenshot or original content was created.”;
+- non-blocking timing-awareness status;
+- optional user-configured minimum waiting target;
+- remaining duration when a user-configured target exists.
+
+Primary actions:
+- Share;
+- Export copy;
+- Delete;
+- More details.
+
+The Share action shall be visible without opening a technical report.
+
+A2.5 UX-SCR-023 — Saved Result Deletion
+
+Purpose:
+Prevent accidental deletion while keeping deletion understandable and immediate.
+
+Single-item confirmation shall show:
+- safe display label;
+- output type;
+- whether an exported external copy may still exist;
+- statement that deletion removes the in-app artifact and its local management metadata.
+
+Bulk deletion shall show:
+- item count;
+- combined local storage size;
+- clear distinction between deleting in-app records and deleting external exported copies.
+
+After confirmation:
+- artifact bytes;
+- previews;
+- verification summary;
+- search index entries;
+- timing metadata;
+- display labels;
+- share-cache derivatives
+
+shall be deleted according to the verified deletion workflow.
+
+A2.6 Final output screen additions
+
+After successful verification and persistence, the final output screen shall show:
+- “Saved in Canonical Share” status;
+- Time since import;
+- Share button;
+- View in Saved Results action;
+- Export copy action;
+- Delete saved result action;
+- Clear transient session action.
+
+The Share button shall use the verified saved artifact or a verified byte-identical share copy.
+Sharing shall not require a second permanent save action.
+
+
+====================================================================================================
+A3. ELAPSED-SINCE-IMPORT UX
+====================================================================================================
+
+A3.1 Definition
+
+Elapsed Since Import is:
+
+    current display instant minus Import Anchor
+
+It is not:
+- processing duration;
+- OCR duration;
+- verification duration;
+- source-file creation age;
+- screenshot age inferred from metadata;
+- destination-app delivery time;
+- proof of resistance to timing correlation.
+
+A3.2 Import Anchor creation
+
+Create the Import Anchor when:
+- accepted Android shared text has been copied into the app’s immutable session representation;
+- an accepted image stream has been copied into app-private session storage and sealed;
+- Photo Picker content has been copied and sealed;
+- direct text entry is submitted as the session source.
+
+Do not create the anchor merely when:
+- the Entry screen opens;
+- the Android share chooser opens;
+- the user starts typing;
+- a provider URI is received but has not been safely accepted;
+- a malformed input is rejected.
+
+A3.3 Clock sources
+
+The implementation shall maintain:
+- a wall-clock timestamp for persistence and human-readable display;
+- a monotonic elapsed-time anchor for live duration calculations during the same device boot.
+
+When the monotonic anchor is unavailable after reboot or process restoration, calculate the displayed
+duration from the persisted wall-clock Import Anchor and mark internal clock confidence accordingly.
+
+The app shall handle:
+- device reboot;
+- manual clock changes;
+- time-zone changes;
+- daylight-saving transitions;
+- process death;
+- database migration.
+
+A wall-clock rollback shall never produce a negative duration. Clock anomalies shall produce a neutral
+warning in technical details without exposing source content.
+
+A3.4 Display locations
+
+Time since import shall appear on:
+- the workflow header after source acceptance;
+- review screens;
+- output preview;
+- final verified result;
+- Saved Results cards;
+- Saved Result Detail;
+- the final pre-share confirmation surface when that surface is enabled.
+
+A compact form may be used in lists. The detail screen shall provide an accessible full-text reading.
+
+A3.5 Update behaviour
+
+The elapsed display shall update while visible without restarting pipeline work or rewriting the artifact.
+Timer UI updates shall not invalidate verification.
+
+The timer shall stop only when the Saved Result is deleted. It shall continue across:
+- app backgrounding;
+- process recreation;
+- device restart;
+- later opening of the Saved Result.
+
+A3.6 Timing-awareness status
+
+Timing awareness shall be advisory and shall not block sharing by default.
+
+The product may support a user-configured minimum waiting target. When configured:
+- the UI shall show whether the target has been reached;
+- the user may share before the target;
+- early sharing shall require no misleading “unsafe” claim;
+- the app shall state that waiting addresses only one possible correlation signal;
+- the selected target shall remain local and shall not be written into the artifact.
+
+No built-in numeric threshold shall be invented by an implementation agent. Any future preset threshold
+must be justified by the project threat model, user research and documented validation.
+
+A3.7 Screenshot and export safety
+
+The timer and import timestamp are application chrome, not output content.
+
+They shall not be:
+- rendered into a rebuilt image;
+- appended to canonical text;
+- embedded in image metadata;
+- added to filenames;
+- included in outgoing share text;
+- included in a QR code;
+- written into a visible output watermark.
+
+When the app offers a dedicated artifact-only preview, it shall provide a clear boundary between app UI
+and the shareable artifact so that users understand what will be exported.
+
+A3.8 Accessibility language
+
+Accessible labels shall describe durations naturally, for example:
+“Time since import: [localized duration].”
+
+Do not announce timer changes every second through TalkBack. Accessibility announcements shall be
+rate-limited and occur on focus, explicit refresh or meaningful state change.
+
+
+====================================================================================================
+A4. DATA MODEL ADDITIONS
+====================================================================================================
+
+A4.1 SavedResult
+
+SavedResult
+- savedResultId: app-generated random identifier
+- schemaVersion
+- displayLabel
+- outputMode
+- canonicalRevision
+- artifactManifest
+- assuranceClass
+- assuranceRationaleSummary
+- verificationState
+- verificationSummaryReference
+- importAnchorWallClock
+- importAnchorMonotonicReference: optional and boot-scoped
+- importClockConfidence
+- persistedAtWallClock
+- lastIntegrityCheckAt
+- contentDigest
+- storageByteCount
+- previewReference
+- favourite
+- createdByAppBuild
+- migrationState
+- lifecycleState
+
+A4.2 ArtifactManifest
+
+ArtifactManifest
+- textArtifactReference: optional
+- imageArtifactReference: optional
+- derivativeArtifactReference: optional
+- artifactMimeTypes
+- artifactDigests
+- canonicalRevision
+- sourcePixelDependencySummary
+- externalExportKnown: boolean only when created by this app
+- integrityState
+
+A4.3 ImportClockConfidence
+
+Values:
+- MONOTONIC_ACTIVE
+- WALL_CLOCK_RESTORED
+- CLOCK_CHANGE_DETECTED
+- UNKNOWN_LEGACY_IMPORT_TIME
+
+The normal user UI need not show this enum. Technical details may explain it in plain language.
+
+A4.4 Storage separation
+
+Persistent Saved Result storage shall be logically and physically separated from:
+- transient session workspaces;
+- share-cache files;
+- source copies;
+- OCR intermediates;
+- crash diagnostics.
+
+Deleting a transient session shall not delete its successfully committed Saved Result.
+Deleting a Saved Result shall not require retention of the original session.
+
+A4.5 Database and file consistency
+
+The metadata record and artifact files shall use a transactional commit protocol.
+
+A Saved Result is visible in the management page only after:
+- all required artifact files are durably written;
+- their digests are computed;
+- the metadata transaction commits;
+- a reopen check succeeds.
+
+Orphaned metadata or orphaned files shall be detected and repaired or deleted without exposing content.
+
+
+====================================================================================================
+A5. NEW BLOCK CATALOG
+====================================================================================================
+
+[PST-001] Create Import Time Anchor
+Stage:
+Input lifecycle
+
+Input:
+Accepted and sealed source
+
+Output:
+ExecutionContext containing Import Anchor
+
+Specific action:
+Record the accepted-source wall-clock instant and a monotonic time reference. Attach the anchor to the
+session without deriving it from source metadata.
+
+User/configuration controls:
+None.
+
+Failure behaviour:
+The session may continue only with a clearly marked unavailable timing status. Do not invent an import
+time from file metadata.
+
+Independent verification:
+Confirm the anchor is created once and remains immutable for the session and derived Saved Result.
+
+Threat coverage:
+Ambiguous handling timeline and misleading source-age assumptions.
+
+Assurance effect:
+No content-assurance increase. Required for the timing-awareness feature.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-002] Persist Verified Result
+Stage:
+Post-verification persistence
+
+Input:
+Verified OutputBundle, VerificationReport and Import Anchor
+
+Output:
+Committed SavedResult
+
+Specific action:
+Write verified final artifacts and minimal management metadata into app-private persistent storage.
+Commit files and metadata transactionally. Exclude source and transient artifacts.
+
+User/configuration controls:
+Optional display label and favourite state may be set after commit.
+
+Failure behaviour:
+Keep the verified output transiently available for retry. Show that verification succeeded but permanent
+save failed. Do not claim “Saved in Canonical Share.”
+
+Independent verification:
+Reopen the stored artifact, compare digests and canonical revision, and confirm the SavedResult record is
+queryable.
+
+Threat coverage:
+Accidental data loss, partial persistence, source leakage into history.
+
+Assurance effect:
+Preserves, but does not raise, the verified assurance class.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-003] Build Safe Saved-Result Preview
+Stage:
+Persistent presentation
+
+Input:
+Committed SavedResult
+
+Output:
+Preview reference or generic type icon
+
+Specific action:
+Create a bounded local preview derived only from the saved final artifact. Do not regenerate a preview
+from source material.
+
+User/configuration controls:
+Preview visibility may be disabled in Settings.
+
+Failure behaviour:
+Use a generic icon and retain the Saved Result.
+
+Independent verification:
+Dependency audit confirms the preview references only the final saved artifact.
+
+Threat coverage:
+Source leakage through thumbnails and oversized memory use.
+
+Assurance effect:
+None.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-004] Revalidate Saved Result
+Stage:
+Persistent verification
+
+Input:
+SavedResult
+
+Output:
+Updated integrity and verification state
+
+Specific action:
+Reopen stored files, verify digests, confirm expected MIME and container properties, and confirm that the
+artifact still maps to its recorded canonical revision and assurance summary.
+
+Triggers:
+- before Managed Share when integrity state is stale or unknown;
+- after storage migration;
+- after restore from process or app update when required;
+- on explicit user request.
+
+Failure behaviour:
+Disable verified sharing for the affected artifact. Offer deletion, technical details and recovery from
+an external copy only when a trusted copy exists.
+
+Independent verification:
+Use the same applicable final-artifact validators required by the baseline verification path.
+
+Threat coverage:
+Local corruption, incomplete migration and stale assurance display.
+
+Assurance effect:
+Maintains or downgrades assurance; never promotes beyond the original verified class.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-005] Managed Share from Saved Result
+Stage:
+Export
+
+Input:
+Integrity-valid SavedResult
+
+Output:
+Share-ready Android object
+
+Specific action:
+Prepare canonical text and/or image for the Android system Sharesheet from the persistent verified
+artifact. Create only the temporary share representation required by platform behaviour.
+
+User/configuration controls:
+Select artifact when BOTH is stored, or share the supported bundle.
+
+Failure behaviour:
+Do not share as verified when revalidation fails. Do not silently fall back to a source or obsolete cache.
+
+Independent verification:
+Inspect outgoing MIME, content URI scope, temporary permission and artifact digest.
+
+Threat coverage:
+Wrong-artifact sharing, stale cache sharing and permission overreach.
+
+Assurance effect:
+Preserves the stored result’s current assurance state.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-006] Delete Saved Result
+Stage:
+Persistent lifecycle
+
+Input:
+User-approved deletion request
+
+Output:
+Deleted SavedResult and deletion result
+
+Specific action:
+Delete persistent artifacts, previews, metadata, indexes and associated share-cache copies. Use
+path-neutral diagnostics.
+
+User/configuration controls:
+Single or multi-select deletion.
+
+Failure behaviour:
+Report partial deletion without showing sensitive paths. Retry safely and prevent partially deleted items
+from appearing as normal shareable results.
+
+Independent verification:
+Re-enumerate all storage and index references for the Saved Result identifier.
+
+Threat coverage:
+Residual local data and orphaned previews.
+
+Assurance effect:
+Not applicable.
+
+----------------------------------------------------------------------------------------------------
+
+[PST-007] Persistent Store Integrity Sweep
+Stage:
+Application lifecycle
+
+Input:
+Saved Result metadata and persistent artifact roots
+
+Output:
+Reconciled persistent store
+
+Specific action:
+Detect orphan files, orphan records, incomplete transactions, invalid previews, failed migrations and
+digest mismatches.
+
+User/configuration controls:
+None in normal mode.
+
+Failure behaviour:
+Quarantine affected records from sharing. Never repair content by substituting a different artifact.
+
+Independent verification:
+Re-run inventory after reconciliation and record content-free diagnostics.
+
+Threat coverage:
+Storage inconsistency and unintended artifact substitution.
+
+Assurance effect:
+Required lifecycle control for persistent results.
+
+
+====================================================================================================
+A6. STORAGE AND PRIVACY REQUIREMENTS
+====================================================================================================
+
+A6.1 Storage location
+
+Saved Results shall use app-private persistent storage. The default product shall not place automatically
+saved artifacts in shared media collections, Downloads or public external storage.
+
+A6.2 Encryption and key handling
+
+Where platform and device capabilities permit, sensitive Saved Result metadata and artifacts shall use
+an app-private encryption design whose keys are protected by Android platform key facilities.
+
+The implementation shall not:
+- derive encryption keys from a user identifier;
+- use one hard-coded key across installations;
+- write plaintext keys beside the encrypted files;
+- upload keys or artifacts in the default offline edition.
+
+Loss of a required key shall not cause the app to expose ciphertext as a valid artifact.
+
+A6.3 Backup and migration
+
+Automatic cloud backup of Saved Results shall be disabled by default unless a separate product decision
+and threat-model revision define:
+- user consent;
+- encryption boundaries;
+- account correlation;
+- restore integrity;
+- deletion semantics;
+- cross-device timing metadata handling.
+
+App updates shall migrate Saved Result schemas without rewriting verified artifact content unless the
+migration explicitly revalidates the resulting bytes.
+
+A6.4 Screenshots and recent-app previews
+
+The product shall evaluate whether Saved Result screens should prevent system screenshots or obscure
+recent-app previews. This decision shall be configurable because users may intentionally need screenshots.
+
+Regardless of that setting:
+- the timer remains app UI, not artifact content;
+- previews shall avoid exposing more content than necessary;
+- notifications shall not include saved content by default.
+
+A6.5 Analytics and logs
+
+Do not log:
+- Saved Result text;
+- image bytes;
+- Import Anchor linked to content;
+- display labels;
+- share time linked to artifact identity;
+- destination app;
+- user waiting-target values.
+
+Content-free aggregate diagnostics require separate approval.
+
+
+====================================================================================================
+A7. SHARING BEHAVIOUR
+====================================================================================================
+
+A7.1 Direct share availability
+
+A Share button shall be present:
+- immediately after a final result is verified and saved;
+- on each Saved Results card where space and accessibility allow;
+- on Saved Result Detail.
+
+A7.2 Pre-share timing awareness
+
+Immediately before launching the system Sharesheet, the app shall make Time since import visible in the
+current screen or a lightweight confirmation surface.
+
+The UI shall allow:
+- Share now;
+- Return without sharing;
+- continue observing the elapsed time.
+
+The app shall not delay or schedule sharing automatically unless a later feature explicitly defines that
+behaviour.
+
+A7.3 Share event privacy
+
+The app shall not permanently record:
+- exact share-launch time;
+- selected destination;
+- completion status reported by the chooser;
+- recipient information.
+
+The live elapsed timer may continue after a share attempt because the result remains stored.
+
+A7.4 Artifact immutability
+
+A Saved Result’s stored verified artifact shall be immutable.
+
+Rename, favourite, sort and display-label changes modify management metadata only.
+Editing canonical content creates a new session and a new Saved Result. It shall not silently overwrite
+the prior verified artifact.
+
+
+====================================================================================================
+A8. SETTINGS ADDITIONS
+====================================================================================================
+
+Add a Saved Results settings section containing:
+- show or hide content previews;
+- default list or grid view;
+- sort preference;
+- optional user-defined waiting target;
+- optional confirmation before sharing prior to the waiting target;
+- app-lock or device-authentication requirement where supported;
+- storage usage;
+- delete all Saved Results;
+- backup status, fixed to off unless a separately approved edition changes it.
+
+No setting may manually increase assurance.
+
+Changing the waiting target affects only timing-awareness presentation. It does not alter artifact
+verification or assurance.
+
+
+====================================================================================================
+A9. ERROR RECOVERY
+====================================================================================================
+
+New recoverable errors:
+- verified output could not be persisted;
+- persistent metadata committed but artifact reopen check failed;
+- preview generation failed;
+- device clock changed;
+- Saved Result revalidation required;
+- share-cache preparation failed;
+- deletion completed only partially.
+
+Required recovery actions:
+- Retry save;
+- Share transient verified result when still safely available;
+- Open Saved Results;
+- Revalidate;
+- Delete affected result;
+- Export a verified copy;
+- Clear transient share cache.
+
+Fatal persistent-result errors:
+- stored artifact digest mismatch with no trusted recovery copy;
+- record points outside approved app-private roots;
+- stored artifact references a source URI;
+- persistence migration changes bytes without revalidation;
+- a supposedly verified result lacks its required verification linkage.
+
+A fatal persistent-result error shall remove the verified badge and block verified sharing.
+
+
+====================================================================================================
+A10. ACCEPTANCE CRITERIA
+====================================================================================================
+
+Functional acceptance:
+
+AC-PF-001  A successfully verified final output is automatically committed as a Saved Result.
+AC-PF-002  Closing and reopening the app retains the Saved Result.
+AC-PF-003  Saved Results lists every committed result exactly once.
+AC-PF-004  The final result screen provides Share, View in Saved Results and Export copy actions.
+AC-PF-005  A Saved Result can be shared directly through the Android system Sharesheet.
+AC-PF-006  Rename and favourite operations do not modify artifact bytes.
+AC-PF-007  Editing content creates a new Saved Result rather than overwriting the verified artifact.
+AC-PF-008  Single and bulk deletion remove the selected in-app records.
+AC-PF-009  A failed persistence transaction does not create a normal visible Saved Result.
+AC-PF-010  BOTH mode preserves revision consistency across stored text and image artifacts.
+
+Timing acceptance:
+
+AC-PT-001  Import Anchor is created once after safe source acceptance.
+AC-PT-002  Time since import is not processing duration.
+AC-PT-003  The elapsed display continues while processing, reviewing and after permanent save.
+AC-PT-004  The elapsed display survives process recreation and device restart.
+AC-PT-005  A device time-zone change does not reset the elapsed duration.
+AC-PT-006  A backward wall-clock change never displays a negative duration.
+AC-PT-007  The final screen and Saved Result Detail show Time since import.
+AC-PT-008  The pre-share surface makes Time since import visible.
+AC-PT-009  Timer values are not embedded in text, image pixels, metadata, filenames or outgoing share data.
+AC-PT-010  The UI states that import time is not necessarily screenshot-capture time.
+AC-PT-011  No default waiting threshold is invented without documented validation.
+AC-PT-012  TalkBack does not announce continuous timer changes at a disruptive frequency.
+
+Security acceptance:
+
+AC-PS-001  Saved Results contain no source URI or source filename.
+AC-PS-002  Source files and OCR intermediates remain subject to transient-session deletion.
+AC-PS-003  Persistent artifacts are stored only in approved app-private roots by default.
+AC-PS-004  A Saved Result is visible only after durable write, metadata commit and reopen verification.
+AC-PS-005  Revalidation failure removes verified sharing capability.
+AC-PS-006  Managed Share uses temporary scoped read permission for images.
+AC-PS-007  Deleting a Saved Result removes associated previews and share-cache derivatives.
+AC-PS-008  Persistent-store integrity sweep detects orphan records and orphan files.
+AC-PS-009  Automatic cloud backup is disabled unless separately approved.
+AC-PS-010  Logs and analytics do not link content identity with import or share timing.
+AC-PS-011  Display metadata cannot manually promote assurance.
+AC-PS-012  A saved derivative remains subject to its derivative assurance ceiling.
+
+UX acceptance:
+
+AC-PU-001  A non-expert can locate previously saved results from primary navigation.
+AC-PU-002  Every card identifies output type, assurance and Time since import.
+AC-PU-003  Share is available without opening technical details.
+AC-PU-004  The interface distinguishes “Saved”, “Verified” and “Shared”.
+AC-PU-005  The interface does not claim that waiting guarantees anonymity.
+AC-PU-006  The delete confirmation distinguishes in-app deletion from external exported copies.
+AC-PU-007  The timer remains readable with large text and screen readers.
+AC-PU-008  Empty, loading, revalidation-required and storage-error states are understandable.
+AC-PU-009  The user can disable sensitive thumbnails without deleting results.
+AC-PU-010  The final result clearly confirms automatic in-app persistence.
+
+
+====================================================================================================
+A11. TEST ADDITIONS
+====================================================================================================
+
+Unit tests:
+- Import Anchor immutability;
+- duration calculation;
+- wall-clock rollback handling;
+- time-zone transition handling;
+- SavedResult schema round-trip;
+- artifact-manifest revision consistency;
+- rename without artifact mutation;
+- transactional visibility rules;
+- deletion inventory;
+- assurance non-promotion.
+
+Instrumented tests:
+- process death during persistence;
+- app restart with Saved Results;
+- device reboot duration restoration;
+- Android Sharesheet launch from a Saved Result;
+- temporary URI permission;
+- multi-select deletion;
+- low-storage persistence failure;
+- database migration;
+- key unavailability;
+- accessibility focus on elapsed-time elements.
+
+Adversarial tests:
+- inject source filename and source URI canaries and search the persistent store;
+- modify stored artifact bytes and confirm revalidation failure;
+- replace a preview while preserving metadata and confirm it cannot replace the authoritative artifact;
+- roll device time backward and forward;
+- change time zone during an active session;
+- create orphan metadata and orphan files;
+- interrupt deletion;
+- interrupt transactional save;
+- attempt to share an invalidated result;
+- inspect outgoing text, image metadata and filename for Import Anchor leakage.
+
+Acceptance:
+No source canary may appear in Saved Result management metadata, logs, previews, share Intents or exported
+artifacts unless it is approved visible final content.
+
+
+====================================================================================================
+A12. IMPLEMENTATION WORK PACKAGES
+====================================================================================================
+
+WP-PST-010 — Persistent Result Models
+Deliverables:
+- SavedResult;
+- ArtifactManifest;
+- ImportClockConfidence;
+- schema validation;
+- migration strategy;
+- immutability tests.
+
+WP-PST-020 — Persistent Store
+Deliverables:
+- app-private artifact repository;
+- transactional metadata store;
+- digest verification;
+- orphan reconciliation;
+- storage-usage reporting;
+- deletion service.
+
+WP-PST-030 — Saved Results UI
+Deliverables:
+- Saved Results screen;
+- Saved Result Detail;
+- search, sort and filter;
+- list/grid presentation;
+- multi-select deletion;
+- preview privacy setting;
+- accessibility tests.
+
+WP-PST-040 — Elapsed-Since-Import Service
+Deliverables:
+- Import Anchor creation;
+- monotonic and wall-clock handling;
+- process and reboot restoration;
+- clock-anomaly handling;
+- localized duration presentation;
+- UI integration at workflow, review, output and saved-result surfaces.
+
+WP-PST-050 — Managed Share
+Deliverables:
+- direct Share action;
+- pre-share timing-awareness surface;
+- stored-artifact revalidation;
+- secure share-cache generation;
+- Sharesheet integration;
+- cross-app instrumentation tests.
+
+WP-PST-060 — Persistent Privacy and Security Review
+Deliverables:
+- backup exclusion validation;
+- key-management review;
+- source-canary tests;
+- screenshot/recent-app-preview decision;
+- deletion verification;
+- storage migration threat review;
+- timing-data leakage review.
+
+
+====================================================================================================
+A13. FINAL FEATURE BEHAVIOUR
+====================================================================================================
+
+The completed feature shall behave as follows:
+
+1. The app safely accepts one source and creates an immutable Import Anchor.
+2. Time since import becomes visible and continues throughout review and output generation.
+3. The pipeline verifies the final artifact.
+4. The app automatically stores the verified final result in app-private persistent storage.
+5. The final screen confirms that the result is saved and provides a direct Share button.
+6. The user can later open Saved Results to find, inspect, share, export, rename or delete it.
+7. Every saved item continues to show Time since import.
+8. The timer remains UI-only and is never inserted into the shared artifact.
+9. Permanent storage contains the verified output, not the transient source-processing workspace.
+10. The UI presents elapsed time as awareness information, not as proof that timing correlation has been
+    eliminated.
+
+====================================================================================================
+END OF AMENDMENT
+====================================================================================================
