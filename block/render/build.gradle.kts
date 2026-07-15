@@ -19,4 +19,5 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)
     androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.truth)
 }
