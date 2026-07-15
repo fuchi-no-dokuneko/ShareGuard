@@ -1,0 +1,213 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag in vMAJOR.MINOR.PATCH form
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub Release as a prerelease
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}-${{ inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: "17"
+  ANDROID_COMPILE_SDK: "36"
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+
+jobs:
+  build:
+    name: Build release APK and AAB
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      tag_name: ${{ steps.release-metadata.outputs.tag_name }}
+      signed: ${{ steps.release-metadata.outputs.signed }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate wrapper JAR and distribution
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-read-only: true
+
+      - name: Ensure Android SDK 36 build packages
+        run: |
+          set -Eeuo pipefail
+          command -v sdkmanager >/dev/null
+          sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" >/dev/null
+
+      - name: Resolve release metadata and signing mode
+        id: release-metadata
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            tag_name="${GITHUB_REF_NAME}"
+          else
+            tag_name="${INPUT_TAG_NAME}"
+          fi
+          if [[ ! "${tag_name}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must match vMAJOR.MINOR.PATCH with an optional suffix." >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] \
+             && git show-ref --verify --quiet "refs/tags/${tag_name}"; then
+            existing_tag_commit=$(git rev-list -n 1 "refs/tags/${tag_name}")
+            checked_out_commit=$(git rev-parse HEAD)
+            if [[ "${existing_tag_commit}" != "${checked_out_commit}" ]]; then
+              echo "The requested tag already points to a different commit." >&2
+              exit 1
+            fi
+          fi
+
+          present=0
+          [[ -n "${ANDROID_KEYSTORE_BASE64}" ]] && ((present += 1))
+          [[ -n "${ANDROID_KEYSTORE_PASSWORD}" ]] && ((present += 1))
+          [[ -n "${ANDROID_KEY_ALIAS}" ]] && ((present += 1))
+          [[ -n "${ANDROID_KEY_PASSWORD}" ]] && ((present += 1))
+          if (( present == 0 )); then
+            signed=false
+          elif (( present == 4 )); then
+            signed=true
+          else
+            echo "Android signing secrets must be either all configured or all absent." >&2
+            exit 1
+          fi
+
+          printf 'tag_name=%s\n' "${tag_name}" >> "${GITHUB_OUTPUT}"
+          printf 'signed=%s\n' "${signed}" >> "${GITHUB_OUTPUT}"
+
+      - name: Test, lint, and build release variants
+        run: |
+          set -Eeuo pipefail
+          test -f ./gradlew
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace \
+            test lintRelease :app:assembleRelease :app:bundleRelease
+
+      - name: Verify merged release manifest
+        run: |
+          set -Eeuo pipefail
+          bash scripts/ci/verify-backup-rules.sh \
+            app/src/main/res/xml/backup_rules.xml \
+            app/src/main/res/xml/data_extraction_rules.xml
+
+          mapfile -d '' manifests < <(
+            find app/build/intermediates -type f \
+              \( -path '*/merged_manifest/release/*/AndroidManifest.xml' \
+                 -o -path '*/merged_manifests/release/*/AndroidManifest.xml' \) \
+              -print0
+          )
+          if (( ${#manifests[@]} == 0 )); then
+            echo "No merged release AndroidManifest.xml was produced." >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            bash scripts/ci/verify-merged-manifest.sh "$manifest"
+          done
+
+      - name: Prepare and optionally sign release artifacts
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/ci/prepare-release-artifacts.sh \
+            "${{ steps.release-metadata.outputs.tag_name }}" \
+            release-artifacts
+
+          while IFS= read -r -d '' apk; do
+            if [[ "${{ steps.release-metadata.outputs.signed }}" == "true" ]]; then
+              bash scripts/ci/inspect-apk.sh "${apk}"
+            else
+              bash scripts/ci/inspect-apk.sh --allow-unsigned "${apk}"
+            fi
+          done < <(find release-artifacts -maxdepth 1 -type f -name '*.apk' -print0)
+
+      - name: Upload release test and lint evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-release-test-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.sarif
+            **/build/reports/lint-results*.xml
+
+      - name: Upload release build evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-release-${{ steps.release-metadata.outputs.tag_name }}
+          if-no-files-found: error
+          retention-days: 30
+          path: release-artifacts/*
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download release build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-release-${{ needs.build.outputs.tag_name }}
+          path: release-artifacts
+
+      - name: Publish release and attach APK/AAB/checksums
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ needs.build.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: ShareGuard ${{ needs.build.outputs.tag_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Automated Android release built from commit `${{ github.sha }}`.
+            Android signing secrets configured: `${{ needs.build.outputs.signed }}`.
+            See `SHA256SUMS` for artifact digests.
+          files: release-artifacts/*

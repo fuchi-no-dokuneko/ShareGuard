@@ -1,0 +1,119 @@
+name: Android Instrumentation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-instrumentation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "17"
+  ANDROID_COMPILE_SDK: "36"
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+
+jobs:
+  wrapper-validation:
+    name: Validate Gradle wrapper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate wrapper JAR and distribution
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+  connected-tests:
+    name: connectedDebugAndroidTest (API ${{ matrix.api-level }})
+    needs: wrapper-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 23
+            target: default
+            arch: x86_64
+          - api-level: 36
+            target: google_apis
+            arch: x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Ensure Android SDK 36 build packages
+        run: |
+          set -Eeuo pipefail
+          command -v sdkmanager >/dev/null
+          sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" >/dev/null
+
+      - name: Check wrapper and enable KVM on the disposable runner
+        run: |
+          set -Eeuo pipefail
+          test -f ./gradlew
+          chmod +x ./gradlew
+          if [[ ! -e /dev/kvm ]]; then
+            echo "/dev/kvm is unavailable on this GitHub-hosted runner." >&2
+            exit 1
+          fi
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Run connected instrumentation tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          profile: pixel_6
+          channel: stable
+          cores: 2
+          ram-size: 4096M
+          heap-size: 1024M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: >-
+            -no-window -noaudio -no-boot-anim
+            -gpu swiftshader_indirect
+            -camera-back none -camera-front none
+          script: |
+            set -Eeuo pipefail
+            ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest
+
+      - name: Upload instrumentation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: instrumentation-api-${{ matrix.api-level }}-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            **/build/outputs/androidTest-results/**
+            **/build/reports/androidTests/**

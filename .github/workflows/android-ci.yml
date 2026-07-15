@@ -1,0 +1,131 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "17"
+  ANDROID_COMPILE_SDK: "36"
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+
+jobs:
+  wrapper-validation:
+    name: Validate Gradle wrapper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate wrapper JAR and distribution
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+  build-test-lint:
+    name: Unit tests, lint, and debug APK
+    needs: wrapper-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Ensure Android SDK 36 build packages
+        run: |
+          set -Eeuo pipefail
+          command -v sdkmanager >/dev/null
+          sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" >/dev/null
+
+      - name: Check wrapper entry point
+        run: |
+          set -Eeuo pipefail
+          test -f ./gradlew
+          test -f ./gradle/wrapper/gradle-wrapper.jar
+          test -f ./gradle/wrapper/gradle-wrapper.properties
+          chmod +x ./gradlew
+
+      - name: Run unit tests, lint, and debug build
+        run: |
+          set -Eeuo pipefail
+          ./gradlew --no-daemon --stacktrace test lintDebug :app:assembleDebug
+
+      - name: Verify merged debug manifest and APK metadata
+        run: |
+          set -Eeuo pipefail
+
+          bash scripts/ci/verify-backup-rules.sh \
+            app/src/main/res/xml/backup_rules.xml \
+            app/src/main/res/xml/data_extraction_rules.xml
+
+          mapfile -d '' manifests < <(
+            find app/build/intermediates -type f \
+              \( -path '*/merged_manifest/debug/*/AndroidManifest.xml' \
+                 -o -path '*/merged_manifests/debug/*/AndroidManifest.xml' \) \
+              -print0
+          )
+          if (( ${#manifests[@]} == 0 )); then
+            echo "No merged debug AndroidManifest.xml was produced." >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            bash scripts/ci/verify-merged-manifest.sh "$manifest"
+          done
+
+          mapfile -d '' apks < <(find app/build/outputs/apk/debug -type f -name '*.apk' -print0)
+          if (( ${#apks[@]} == 0 )); then
+            echo "No debug APK was produced." >&2
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            bash scripts/ci/inspect-apk.sh "$apk"
+          done
+
+      - name: Upload test and lint evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-ci-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.sarif
+            **/build/reports/lint-results*.xml
+
+      - name: Upload debug APK
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shareguard-debug-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: app/build/outputs/apk/debug/*.apk
