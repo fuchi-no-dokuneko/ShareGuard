@@ -74,7 +74,7 @@ jobs:
       - name: Run unit tests, lint, and debug build
         run: |
           set -Eeuo pipefail
-          ./gradlew --no-daemon --stacktrace test lintDebug :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace test lintDebug :app:assembleDebug :app:cyclonedxDirectBom
 
       - name: Verify merged debug manifest and APK metadata
         run: |
@@ -83,6 +83,9 @@ jobs:
           bash scripts/ci/verify-backup-rules.sh \
             app/src/main/res/xml/backup_rules.xml \
             app/src/main/res/xml/data_extraction_rules.xml
+          python3 scripts/ci/verify-sbom.py \
+            build/reports/cyclonedx/bom.json \
+            build/reports/cyclonedx/bom.xml
 
           mapfile -d '' manifests < <(
             find app/build/intermediates -type f \
@@ -120,6 +123,8 @@ jobs:
             **/build/reports/lint-results*.html
             **/build/reports/lint-results*.sarif
             **/build/reports/lint-results*.xml
+            build/reports/cyclonedx/bom.json
+            build/reports/cyclonedx/bom.xml
 
       - name: Upload debug APK
         if: ${{ success() }}

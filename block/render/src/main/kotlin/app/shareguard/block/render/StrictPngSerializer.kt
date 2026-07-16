@@ -21,11 +21,16 @@ class StrictPngSerializer {
     fun serializeOpaque(bitmap: Bitmap): Pair<ByteArray, PngContainerEvidence> {
         requireAllPixelsOpaque(bitmap)
         bitmap.setHasAlpha(false)
-        val bytes = ByteArrayOutputStream(estimatedCapacity(bitmap)).use { output ->
+        val encoderBytes = ByteArrayOutputStream(estimatedCapacity(bitmap)).use { output ->
             if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
                 throw RenderException(RenderFailureCode.SERIALIZATION_FAILED)
             }
             output.toByteArray()
+        }
+        val bytes = try {
+            stripEncoderAncillaryChunks(encoderBytes)
+        } finally {
+            encoderBytes.fill(0)
         }
         return try {
             bytes to reopenAndInspect(bytes)
@@ -36,7 +41,7 @@ class StrictPngSerializer {
     }
 
     fun reopenAndInspect(bytes: ByteArray): PngContainerEvidence {
-        val chunks = parseChunks(bytes)
+        val chunks = parseChunks(bytes, permitAncillaryChunks = false)
         val header = chunks.firstOrNull { it.type == "IHDR" }
             ?: throw RenderException(RenderFailureCode.CONTAINER_REOPEN_FAILED)
         if (header.data.size != 13) throw RenderException(RenderFailureCode.CONTAINER_REOPEN_FAILED)
@@ -76,7 +81,27 @@ class StrictPngSerializer {
         }
     }
 
-    private fun parseChunks(bytes: ByteArray): List<PngChunk> {
+    private fun stripEncoderAncillaryChunks(bytes: ByteArray): ByteArray {
+        val chunks = parseChunks(bytes, permitAncillaryChunks = true)
+        return ByteArrayOutputStream(bytes.size).use { output ->
+            output.write(PNG_SIGNATURE)
+            chunks.filter { it.type in ALLOWED_CHUNK_TYPES }.forEach { chunk ->
+                output.writeIntBigEndian(chunk.data.size)
+                val typeBytes = chunk.type.encodeToByteArray()
+                output.write(typeBytes)
+                output.write(chunk.data)
+                val crc = CRC32().apply {
+                    update(typeBytes)
+                    update(chunk.data)
+                }.value
+                output.writeIntBigEndian(crc.toInt())
+                typeBytes.fill(0)
+            }
+            output.toByteArray()
+        }
+    }
+
+    private fun parseChunks(bytes: ByteArray, permitAncillaryChunks: Boolean): List<PngChunk> {
         if (bytes.size < PNG_SIGNATURE.size + 12 ||
             !bytes.copyOfRange(0, PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)
         ) {
@@ -93,13 +118,15 @@ class StrictPngSerializer {
             }
             val type = bytes.copyOfRange(offset + 4, offset + 8).toString(Charsets.US_ASCII)
             if (!PNG_CHUNK_TYPE.matches(type)) throw RenderException(RenderFailureCode.CONTAINER_REOPEN_FAILED)
-            if (type !in ALLOWED_CHUNK_TYPES) throw RenderException(RenderFailureCode.UNEXPECTED_PNG_CHUNK)
             if (sawIend) throw RenderException(RenderFailureCode.CONTAINER_REOPEN_FAILED)
             val dataStart = offset + 8
             val dataEnd = dataStart + length
             val declaredCrc = ByteBuffer.wrap(bytes, dataEnd, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xffffffffL
             val actualCrc = CRC32().apply { update(bytes, offset + 4, length + 4) }.value
             if (declaredCrc != actualCrc) throw RenderException(RenderFailureCode.CONTAINER_REOPEN_FAILED)
+            if (type !in ALLOWED_CHUNK_TYPES && (!permitAncillaryChunks || type.first() !in 'a'..'z')) {
+                throw RenderException(RenderFailureCode.UNEXPECTED_PNG_CHUNK)
+            }
             chunks += PngChunk(type, bytes.copyOfRange(dataStart, dataEnd))
             offset = dataEnd + 4
             if (type == "IEND") sawIend = true
@@ -130,6 +157,13 @@ class StrictPngSerializer {
     }
 
     private data class PngChunk(val type: String, val data: ByteArray)
+
+    private fun ByteArrayOutputStream.writeIntBigEndian(value: Int) {
+        write(value ushr 24 and 0xff)
+        write(value ushr 16 and 0xff)
+        write(value ushr 8 and 0xff)
+        write(value and 0xff)
+    }
 
     private companion object {
         val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)

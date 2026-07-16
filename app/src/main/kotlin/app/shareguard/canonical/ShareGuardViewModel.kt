@@ -63,6 +63,11 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         cleanupEvidence = container::awaitStartupMaintenance,
     )
     private val imageImportWorkflow = LocalImageImportWorkflow()
+    private val derivativeWorkflow = DerivativeImageWorkflow(
+        context = application,
+        repository = container.repository,
+        cleanupEvidence = container::awaitStartupMaintenance,
+    )
     private val boundedRandomDelay = PolicyBoundedRandomDelay()
     private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Application.MODE_PRIVATE)
     private val _state = MutableStateFlow(persistentUiDefaults())
@@ -86,6 +91,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     private var shareJitterEnabled: Boolean = _state.value.shareJitterEnabled
     private var referenceTimerJob: Job? = null
     private var activeImportAnchor: ImportAnchor? = null
+    private var imageClaimedMime: String? = null
 
     fun openTextEntry(initialText: String = "", method: ImportMethod = ImportMethod.DIRECT_ENTRY) {
         clearTransientSession()
@@ -106,8 +112,11 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun chooseOutput(outputMode: OutputMode) {
-        if (outputMode == OutputMode.DERIVATIVE_IMAGE) return
-        _state.value = _state.value.copy(selectedOutput = outputMode)
+        if (outputMode == OutputMode.DERIVATIVE_IMAGE && inputKind != InputKind.IMAGE) return
+        _state.value = _state.value.copy(
+            selectedOutput = outputMode,
+            derivativeWarningAcknowledged = false,
+        )
     }
 
     fun finishOutputChoice() {
@@ -133,6 +142,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 val session = container.sessionWorkspaceManager.startSession().session
                 activeSession = session
                 val resolver = getApplication<Application>().contentResolver
+                imageClaimedMime = resolver.getType(uri)
                 val stream = resolver.openInputStream(uri) ?: error("IMAGE_SOURCE_UNAVAILABLE")
                 val snapshot = session.snapshots.sealAcceptedProviderSource(
                     stream,
@@ -148,19 +158,26 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 startReferenceTimer(snapshot.descriptor.importAnchor)
                 val bytes = snapshot.readVerified()
                 try {
-                    imageImportWorkflow.inspect(bytes, resolver.getType(uri))
+                    imageImportWorkflow.inspect(bytes, imageClaimedMime)
                 } finally {
                     bytes.fill(0)
                 }
             }.onSuccess { inspection ->
+                val codeNotice = when {
+                    inspection.machineReadableRegionCount == 0 -> ""
+                    inspection.machineReadableReviewRequired ->
+                        " ${inspection.machineReadableRegionCount} machine-readable region(s) need review and will be excluded."
+                    else ->
+                        " ${inspection.machineReadableRegionCount} locally decoded machine-readable region(s) will be excluded."
+                }
                 _state.value = _state.value.copy(
                     route = AppRoute.IMAGE_PREVIEW,
                     imageSummary = inspection.summary,
                     text = inspection.provisionalOcrText,
                     imageOcrWarning = if (inspection.ocrViewsAgreed) {
-                        "OCR is local and provisional. Review every character and reading-order line."
+                        "OCR is local and provisional. Review every character and reading-order line.$codeNotice"
                     } else {
-                        "Local OCR views disagreed. Correct every character and reading-order line before continuing."
+                        "Local OCR views disagreed. Correct every character and reading-order line before continuing.$codeNotice"
                     },
                     transientImagePreview = inspection.transientPreview,
                 )
@@ -168,6 +185,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 activeSession?.lifecycle?.failFatal()
                 activeSession = null
                 sourceSnapshot = null
+                imageClaimedMime = null
                 showError(failure)
             }
         }
@@ -175,7 +193,11 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
 
     fun continueImageReview() {
         if (_state.value.route != AppRoute.IMAGE_PREVIEW) return
-        _state.value = _state.value.copy(route = AppRoute.TEXT_INPUT)
+        if (_state.value.selectedOutput == OutputMode.DERIVATIVE_IMAGE) {
+            openDerivativeReview()
+        } else {
+            _state.value = _state.value.copy(route = AppRoute.TEXT_INPUT)
+        }
     }
 
     fun backFromTextInput() {
@@ -192,7 +214,12 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
 
     fun submitText() {
         val text = _state.value.text
-        if (text.isEmpty() || _state.value.route != AppRoute.TEXT_INPUT) return
+        if (_state.value.route != AppRoute.TEXT_INPUT) return
+        if (inputKind == InputKind.IMAGE && _state.value.selectedOutput == OutputMode.DERIVATIVE_IMAGE) {
+            openDerivativeReview()
+            return
+        }
+        if (text.isEmpty()) return
         _state.value = _state.value.copy(route = AppRoute.PROCESSING, errorCode = null)
         viewModelScope.launch {
             runCatching {
@@ -273,11 +300,55 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                     reason = entry.reason.value,
                     semanticImpact = entry.semanticImpact.name.lowercase().replace('_', ' '),
                 )
-            },
+            } + anticipatedOutputLedgerRows(_state.value.selectedOutput),
         )
     }
 
+    private fun anticipatedOutputLedgerRows(outputMode: OutputMode): List<LedgerReviewRow> = buildList {
+        fun row(blockId: String, reason: String) {
+            add(LedgerReviewRow(blockId, null, null, reason, "none"))
+        }
+        if (outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {
+            row("OUT-TXT-001", "CANONICAL_TEXT_SERIALIZED")
+        }
+        if (outputMode in setOf(OutputMode.REBUILT_IMAGE, OutputMode.BOTH)) {
+            row("REN-001", "FRESH_CANVAS_ALLOCATED")
+            row("REN-002", "BUNDLED_FONT_RESOLVED")
+            row("REN-003", "TEXT_SHAPED")
+            row("REN-004", "GENERIC_PRIMITIVE_RENDERED")
+            row("REN-008", "ALPHA_FLATTENED")
+            row("REN-009", "CANONICAL_COLOUR_APPLIED")
+            row("REN-010", "PNG_SERIALIZED")
+            row("REN-011", "PNG_REOPENED")
+        }
+    }
+
+    private fun openDerivativeReview() {
+        check(inputKind == InputKind.IMAGE) { "DERIVATIVE_REQUIRES_IMAGE_SOURCE" }
+        reviewPlan = null
+        approvedPlan = null
+        _state.value = _state.value.copy(
+            route = AppRoute.SEMANTIC_DIFF,
+            canonicalPreview = "",
+            derivativeWarningAcknowledged = false,
+            ledgerRows = listOf(
+                LedgerReviewRow("DER-001", null, null, "SOURCE_RASTER_RESAMPLED_TO_FRESH_GRID", "possible"),
+                LedgerReviewRow("DER-002", null, null, "CHANNELS_CANONICALIZED_AND_ALPHA_FLATTENED", "possible"),
+                LedgerReviewRow("DER-005", null, null, "FRESH_STRICT_PNG_SERIALIZED", "possible"),
+            ),
+        )
+    }
+
+    fun setDerivativeWarningAcknowledged(acknowledged: Boolean) {
+        if (_state.value.selectedOutput != OutputMode.DERIVATIVE_IMAGE) return
+        _state.value = _state.value.copy(derivativeWarningAcknowledged = acknowledged)
+    }
+
     fun verifyAndSave() {
+        if (_state.value.selectedOutput == OutputMode.DERIVATIVE_IMAGE) {
+            verifyDerivativeAndSave()
+            return
+        }
         val session = activeSession ?: return showError(IllegalStateException("SESSION_MISSING"))
         val snapshot = sourceSnapshot ?: return showError(IllegalStateException("SOURCE_SNAPSHOT_MISSING"))
         val plan = approvedPlan ?: return showError(IllegalStateException("APPROVED_PLAN_MISSING"))
@@ -306,6 +377,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 session.lifecycle.complete()
                 activeSession = null
                 sourceSnapshot = null
+                imageClaimedMime = null
                 reviewPlan = null
                 approvedPlan = null
                 clearTransientPreview()
@@ -320,6 +392,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                     ledgerRows = emptyList(),
                     result = ResultUiState(
                         savedResultId = completion.persisted?.savedResult?.savedResultId?.value,
+                        outputMode = _state.value.selectedOutput,
                         canonicalText = completion.canonicalText,
                         assuranceClass = completion.verification.report.assuranceClass,
                         assuranceLabel = completion.verification.humanReadableReport.assuranceLabel,
@@ -332,6 +405,77 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 session.lifecycle.failFatal()
                 activeSession = null
                 sourceSnapshot = null
+                imageClaimedMime = null
+                clearTransientPreview()
+                showError(failure)
+            }
+        }
+    }
+
+    private fun verifyDerivativeAndSave() {
+        val session = activeSession ?: return showError(IllegalStateException("SESSION_MISSING"))
+        val snapshot = sourceSnapshot ?: return showError(IllegalStateException("SOURCE_SNAPSHOT_MISSING"))
+        if (!_state.value.derivativeWarningAcknowledged) {
+            return showError(IllegalStateException("DERIVATIVE_WARNING_NOT_ACKNOWLEDGED"))
+        }
+        _state.value = _state.value.copy(route = AppRoute.PROCESSING)
+        viewModelScope.launch {
+            runCatching {
+                val bytes = snapshot.readVerified()
+                try {
+                    imageImportWorkflow.materializeDerivativeSource(bytes, imageClaimedMime).use { source ->
+                        derivativeWorkflow.verifyAndPersist(
+                            session = session,
+                            sourceHandle = snapshot.descriptor.sourceHandle,
+                            importAnchor = snapshot.descriptor.importAnchor,
+                            source = source,
+                            displayLabel = DisplayLabel("Derivative image"),
+                            warningAcknowledged = true,
+                        )
+                    }
+                } finally {
+                    bytes.fill(0)
+                }
+            }.onSuccess { completion ->
+                val exactImagePreview = completion.exactImagePreviewBytes.let { encoded ->
+                    try {
+                        BitmapFactory.decodeByteArray(encoded, 0, encoded.size)
+                            ?: error("DERIVATIVE_PREVIEW_DECODE_FAILED")
+                    } finally {
+                        encoded.fill(0)
+                    }
+                }
+                session.lifecycle.complete()
+                activeSession = null
+                sourceSnapshot = null
+                imageClaimedMime = null
+                clearTransientPreview()
+                _state.value = _state.value.copy(
+                    route = AppRoute.RESULT,
+                    text = "",
+                    imageSummary = null,
+                    imageOcrWarning = null,
+                    transientImagePreview = null,
+                    exactResultImagePreview = exactImagePreview,
+                    canonicalPreview = "",
+                    ledgerRows = emptyList(),
+                    derivativeWarningAcknowledged = false,
+                    result = ResultUiState(
+                        savedResultId = completion.persisted?.savedResult?.savedResultId?.value,
+                        outputMode = OutputMode.DERIVATIVE_IMAGE,
+                        canonicalText = "",
+                        assuranceClass = completion.verification.report.assuranceClass,
+                        assuranceLabel = completion.verification.humanReadableReport.assuranceLabel,
+                        statusLines = completion.verification.humanReadableReport.statusLines,
+                        limitationLines = completion.verification.humanReadableReport.limitationLines,
+                        blockingChecks = completion.verification.blockingVerificationTypes.map { it.name },
+                    ),
+                )
+            }.onFailure { failure ->
+                session.lifecycle.failFatal()
+                activeSession = null
+                sourceSnapshot = null
+                imageClaimedMime = null
                 clearTransientPreview()
                 showError(failure)
             }
@@ -600,10 +744,19 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             } else {
                 null
             }
-            val image = if (result.outputMode in setOf(OutputMode.REBUILT_IMAGE, OutputMode.BOTH)) {
+            val image = if (result.outputMode in setOf(
+                    OutputMode.REBUILT_IMAGE,
+                    OutputMode.BOTH,
+                    OutputMode.DERIVATIVE_IMAGE,
+                )
+            ) {
                 val descriptor = container.managedShareCache.prepare(
                     result.savedResultId,
-                    ArtifactKind.REBUILT_IMAGE,
+                    if (result.outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                        ArtifactKind.DERIVATIVE_IMAGE
+                    } else {
+                        ArtifactKind.REBUILT_IMAGE
+                    },
                 ).also(prepared::add)
                 val encoded = container.managedShareCache.openReadOnly(descriptor.cacheToken).use { it.readBytes() }
                 try {
@@ -973,7 +1126,10 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun TextReviewPlan.toReviewItems(): List<ReviewItemUiModel> {
         val source = sourceText
-        return (textResult.findings + urlResult.analysisBatch.findings + listOfNotNull(ocrReviewFinding))
+        return (
+            textResult.findings + urlResult.analysisBatch.findings +
+                listOfNotNull(ocrReviewFinding, imageExclusionFinding)
+            )
             .filter { it.requiresUserDecision || it.semanticRisk != SemanticRisk.NONE }
             .distinctBy { it.findingId }
             .map { finding -> finding.toReviewItem(source) }
@@ -1086,6 +1242,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         sourceSnapshot = null
         reviewPlan = null
         approvedPlan = null
+        imageClaimedMime = null
     }
 
     private fun clearTransientSession() {
@@ -1098,6 +1255,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         sourceSnapshot = null
         reviewPlan = null
         approvedPlan = null
+        imageClaimedMime = null
     }
 
     private fun clearTransientPreview() {

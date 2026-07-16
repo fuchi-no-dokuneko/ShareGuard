@@ -33,7 +33,7 @@ Requirements:
 - no service account, network API key or downloaded runtime model
 
 ```bash
-./gradlew test lintDebug :app:assembleDebug
+./gradlew test lintDebug :app:assembleDebug :app:cyclonedxDirectBom
 ```
 
 Useful focused checks:
@@ -44,6 +44,9 @@ Useful focused checks:
 bash scripts/ci/verify-backup-rules.sh \
   app/src/main/res/xml/backup_rules.xml \
   app/src/main/res/xml/data_extraction_rules.xml
+python3 scripts/ci/verify-sbom.py \
+  build/reports/cyclonedx/bom.json \
+  build/reports/cyclonedx/bom.xml
 ```
 
 Device-backed tests run on API 23 and API 36 managed emulators in GitHub Actions. The local project does
@@ -69,6 +72,7 @@ The checked-in specifications are the sole product authority. Conflicts resolve 
 
 The [implementation plan](IMPLEMENTATION_PLAN.md) records the effective contract and verification matrix.
 Third-party documentation is used only to select and validate maintained platform APIs and dependencies.
+Release builds attach CycloneDX 1.6 JSON/XML SBOMs generated from the resolved application runtime graph.
 
 ## Security reports
 

@@ -13,6 +13,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.shareguard.core.model.OutputMode
 import java.io.FileInputStream
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -87,6 +88,38 @@ class ReleasePrivacyEvidenceInstrumentedTest {
             }
         } finally {
             bytes.fill(0)
+        }
+    }
+
+    @Test
+    fun rebuiltImageUsesActualAndroidRendererWithoutStructuralOrPixelLineageBlockers() {
+        assertTrue(BuildConfig.RELEASE_PRIVACY_EVIDENCE)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity {
+                it.runCanonicalTextWorkflowForTest(
+                    "Readable canonical image",
+                    OutputMode.REBUILT_IMAGE,
+                )
+            }
+            val deadline = SystemClock.elapsedRealtime() + 45_000L
+            var state: ShareGuardUiState? = null
+            while (SystemClock.elapsedRealtime() < deadline) {
+                scenario.onActivity { state = it.currentUiStateForTest() }
+                if (state?.route in setOf(AppRoute.RESULT, AppRoute.ERROR)) break
+                SystemClock.sleep(100L)
+            }
+            assertEquals(state?.errorCode ?: "workflow did not complete", AppRoute.RESULT, state?.route)
+            assertNotNull(state?.exactResultImagePreview)
+            assertTrue(
+                "structural or source-pixel verification unexpectedly blocked",
+                state?.result?.blockingChecks.orEmpty().none {
+                    it in setOf(
+                        "EXECUTED_BLOCK_MANIFEST",
+                        "CANONICAL_REVISION_LINK",
+                        "SOURCE_PIXEL_DEPENDENCY",
+                    )
+                },
+            )
         }
     }
 

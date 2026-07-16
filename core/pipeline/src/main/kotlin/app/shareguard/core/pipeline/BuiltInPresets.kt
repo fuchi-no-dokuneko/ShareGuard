@@ -110,7 +110,7 @@ object BuiltInPresets {
         inputKind = InputKind.IMAGE,
         outputMode = OutputMode.REBUILT_IMAGE,
         sequence = imageCanonical(includeFinalAssuranceGate = false) + listOf(
-            "IMG-017", "IMG-018", "REV-006", "REV-008", "TXT-017",
+            "IMG-017", "REV-006", "REV-008", "TXT-017",
         ) + fullRebuildOutputAndVerification() + completion(),
         sourceAlternatives = imageSourceAlternatives(),
         ceiling = AssuranceClass.AS_4_FULLY_REBUILT_TEXTUAL_IMAGE,
@@ -122,7 +122,8 @@ object BuiltInPresets {
         outputMode = OutputMode.DERIVATIVE_IMAGE,
         sequence = imageInput() + ids("IMG", 1..8) + listOf(
             "CAN-001", "CAN-002",
-            "DER-001", "DER-002", "DER-003", "DER-004", "DER-005", "DER-006",
+            // Quantization and stochastic perturbation remain off until corpus benchmark approval exists.
+            "DER-001", "DER-002", "DER-005", "DER-006",
             "CAN-003",
             "OUT-IMG-001", "OUT-BND-001",
             "VER-001", "VER-003", "VER-007", "VER-008", "VER-009", "VER-010", "VER-014", "VER-015",
@@ -147,7 +148,7 @@ object BuiltInPresets {
         inputKind = InputKind.IMAGE,
         outputMode = OutputMode.BOTH,
         sequence = imageCanonical(includeFinalAssuranceGate = false) + listOf(
-            "IMG-017", "IMG-018", "REV-006", "REV-008", "TXT-017", "OUT-TXT-001", "OUT-TXT-002",
+            "IMG-017", "REV-006", "REV-008", "TXT-017", "OUT-TXT-001", "OUT-TXT-002",
         ) + fullRebuildOutputAndVerification(includeBundle = true) + completion(),
         sourceAlternatives = imageSourceAlternatives(),
         ceiling = AssuranceClass.AS_4_FULLY_REBUILT_TEXTUAL_IMAGE,
@@ -224,6 +225,7 @@ object BuiltInPresets {
             ids("TXT", 1..9) +
             ids("URL", 1..9) +
             listOf("CAN-001", "CAN-002", "REV-003", "REV-005") +
+            (if (includeFinalAssuranceGate) listOf("REV-006") else emptyList()) +
             ids("TXT", 10..16) +
             ids("URL", 10..15) +
             ending
@@ -236,7 +238,7 @@ object BuiltInPresets {
 
     private fun rebuiltImageOutputAndVerification(includeBundle: Boolean = false): List<String> {
         val output = listOf(
-            "REN-001", "REN-002", "REN-003", "REN-004", "REN-006", "REN-008", "REN-009", "REN-010", "REN-011",
+            "REN-001", "REN-002", "REN-003", "REN-004", "REN-008", "REN-009", "REN-010", "REN-011",
             "OUT-IMG-001",
         )
         val verification = listOf(
@@ -248,7 +250,7 @@ object BuiltInPresets {
 
     private fun fullRebuildOutputAndVerification(includeBundle: Boolean = false): List<String> {
         val output = listOf(
-            "REN-001", "REN-002", "REN-003", "REN-004", "REN-005", "REN-006", "REN-008", "REN-009", "REN-010", "REN-011",
+            "REN-001", "REN-002", "REN-003", "REN-004", "REN-008", "REN-009", "REN-010", "REN-011",
             "OUT-IMG-001", "OUT-BND-001",
         )
         return output + ids("VER", 1..11) + listOf("VER-014", "VER-015")

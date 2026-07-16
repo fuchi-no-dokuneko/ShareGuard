@@ -42,6 +42,7 @@ data class LedgerReviewRow(
 
 data class ResultUiState(
     val savedResultId: String?,
+    val outputMode: OutputMode,
     val canonicalText: String,
     val assuranceClass: AssuranceClass,
     val assuranceLabel: String,
@@ -64,6 +65,7 @@ data class ShareGuardUiState(
     val reviewSelections: Map<String, DecisionAction> = emptyMap(),
     val canonicalPreview: String = "",
     val ledgerRows: List<LedgerReviewRow> = emptyList(),
+    val derivativeWarningAcknowledged: Boolean = false,
     val result: ResultUiState? = null,
     val exactResultImagePreview: android.graphics.Bitmap? = null,
     val savedItems: List<SavedResultCardUiModel> = emptyList(),

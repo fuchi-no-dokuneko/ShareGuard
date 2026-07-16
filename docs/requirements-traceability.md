@@ -17,7 +17,7 @@ complete only when its implementation, focused tests and applicable Android inte
 | PST-001..007, encrypted durable storage and logical deletion | `core/storage` | Room migration, interruption, reopen/digest, key loss, corruption, orphan and deletion tests |
 | UX-SCR-001..023 and settings | `feature/*`, `core/ui`, `app` | state/reducer, Compose semantics, large-text/landscape and API 23/36 instrumentation tests |
 | Default offline/backup/log/trace posture | manifest, CI scripts, threat/dependency records | merged-manifest/APK checks, backup checks, lint, CodeQL, dependency review and canaries |
-| Public release | `.github/workflows`, `scripts/ci` | green tag run, public visibility, tag commit, APK/AAB/checksum asset verification |
+| Public release | `.github/workflows`, `scripts/ci` | green tag run, public visibility, tag commit, APK/AAB/CycloneDX SBOM/checksum asset verification |
 
 The test corpus manifest carries stable fixture identifiers and expected semantics. Tests must select
 fixtures by ID so a passing count cannot hide a missing required case.

@@ -83,6 +83,28 @@ class OcrOrchestratorAndBarcodeTest {
     }
 
     @Test
+    fun `empty decoded barcode fails closed without entering text routing`() = runBlocking {
+        var routed = false
+        val service = BarcodeRoutingService(
+            BarcodeUnicodeGate {
+                routed = true
+                UnicodeGatedBarcodeValue(it)
+            },
+            CanonicalTextAndUrlRouter {
+                routed = true
+                BarcodeRoutingReceipt("TEXT_POLICY_APPLIED")
+            },
+        )
+
+        val result = service.route(BarcodeObservation("", 256, 7, BOUNDS))
+
+        assertThat(result.decoded).isFalse()
+        assertThat(result.regionPolicy).isEqualTo(ImageRegionPolicy.SOLID_REDACT)
+        assertThat(result.reviewReasons).containsExactly(OcrReviewReason.UNDECODABLE_REGION)
+        assertThat(routed).isFalse()
+    }
+
+    @Test
     fun `undecodable or inconsistent barcode views default to solid redaction`() = runBlocking {
         val service = BarcodeRoutingService(
             BarcodeUnicodeGate { UnicodeGatedBarcodeValue(it) },

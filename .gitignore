@@ -11,5 +11,7 @@ captures/
 *.keystore
 *.hprof
 *.log
+__pycache__/
+*.py[cod]
 dependency-locks/
 app/release/

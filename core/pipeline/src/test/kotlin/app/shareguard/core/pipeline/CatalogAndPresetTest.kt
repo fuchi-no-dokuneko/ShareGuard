@@ -84,12 +84,12 @@ class CatalogAndPresetTest {
         val expected = mapOf(
             "PRESET-TT-BALANCED" to (59 to "9570f89b04354931044d073e6622bada594eeca13286b7621292ac8e0adc5eb4"),
             "PRESET-TT-STRICT-URL" to (62 to "20875e745994876ecfc1522bef6fdfc9ec8a5a059febdd6a008407dab3380e03"),
-            "PRESET-TI-REBUILT" to (71 to "8de25f1bfa146cc2f96fafe464f22e701419ca2eb7d5249e7f73e2abafc7c38f"),
-            "PRESET-IT-CANONICAL" to (79 to "e808e7ba75a9dc95d08aa867857e721ee733b50686e98fcdf7952a98002a83cc"),
-            "PRESET-II-FULL-REBUILD" to (96 to "adce5ae7e58f0ced264911d056ef5a7dc0302f43d48a43d3a8de895a409ef16b"),
-            "PRESET-II-DERIVATIVE" to (39 to "bd5a270d3a491e29657db78415c6bee83bf5ced8428ed8368a56ec7ddf57d25d"),
-            "PRESET-TB-BOTH" to (73 to "acbb7df5f7bfcf0db0daf19e677290f00e99eea18585526667b658bec8922288"),
-            "PRESET-IB-BOTH" to (98 to "9ba3706ff47a902403c646905f69a285f44a6af777f92cc6b2afbf864cb5dab1"),
+            "PRESET-TI-REBUILT" to (70 to "4747fb1ca495d7a2a08440750acf531b152125aea620f6c6089e35651d4654df"),
+            "PRESET-IT-CANONICAL" to (80 to "7bb7fddecc8c31c341efde77949f56fddecd1587650e3f1711c094c49033b8c3"),
+            "PRESET-II-FULL-REBUILD" to (93 to "6c721146bf79cc47be745b6cc7f33cbf12274f4d8c29ab4e334d173a000d580f"),
+            "PRESET-II-DERIVATIVE" to (37 to "b5a10a78efc7e000476ad985101a76c1e24457431e66f67c650090763b475df5"),
+            "PRESET-TB-BOTH" to (72 to "fac3ab9e1060c8502d09ffa7746b666eb63a6a62e7dbafddaf798b873b10aece"),
+            "PRESET-IB-BOTH" to (95 to "36405e6f4799b18cc4781e049e4161b36d5eeb57e432c2186d578eeee36aaa54"),
         )
 
         assertThat(BuiltInPresets.all.map { it.presetId }).containsExactlyElementsIn(expected.keys)

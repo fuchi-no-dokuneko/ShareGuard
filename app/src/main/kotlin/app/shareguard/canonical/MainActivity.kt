@@ -11,6 +11,8 @@ import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import app.shareguard.core.model.OutputMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -75,8 +77,28 @@ class MainActivity : ComponentActivity() {
 
     internal fun currentUiStateForTest(): ShareGuardUiState = viewModel.state.value
 
-    internal fun runCanonicalTextWorkflowForTest(text: String) {
+    internal fun runCanonicalTextWorkflowForTest(text: String, outputMode: OutputMode = OutputMode.TEXT) {
         viewModel.openTextEntry(text)
+        viewModel.chooseOutput(outputMode)
         viewModel.submitText()
+        lifecycleScope.launch {
+            while (true) {
+                val current = viewModel.state.value
+                when (current.route) {
+                    AppRoute.FINDING_REVIEW -> {
+                        current.reviewItems.forEach { item ->
+                            item.allowedActions.firstOrNull()?.let { action ->
+                                viewModel.chooseReviewAction(item.id, action)
+                            }
+                        }
+                        viewModel.applyReviewDecisions()
+                    }
+                    AppRoute.SEMANTIC_DIFF -> viewModel.verifyAndSave()
+                    AppRoute.RESULT, AppRoute.ERROR -> return@launch
+                    else -> Unit
+                }
+                delay(25L)
+            }
+        }
     }
 }

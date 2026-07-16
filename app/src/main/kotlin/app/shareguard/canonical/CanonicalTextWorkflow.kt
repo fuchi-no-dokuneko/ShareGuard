@@ -1,6 +1,9 @@
 package app.shareguard.canonical
 
 import android.content.Context
+import app.shareguard.block.image.BlockDependencyUse
+import app.shareguard.block.image.ImageDependencyDeclaration
+import app.shareguard.block.image.ImageSourceDependencyMapper
 import app.shareguard.block.text.CanonicalTextSerializer
 import app.shareguard.block.ocr.OcrScript
 import app.shareguard.block.render.CanonicalImageRenderer
@@ -9,6 +12,7 @@ import app.shareguard.block.render.CanonicalRenderRequest
 import app.shareguard.block.render.CanonicalRenderTheme
 import app.shareguard.block.render.EncodedRenderedImage
 import app.shareguard.block.render.RebuiltArtifactIdentity
+import app.shareguard.block.render.RenderOperationCode
 import app.shareguard.block.render.RenderResourcePlan
 import app.shareguard.block.render.RenderedArtifactFactory
 import app.shareguard.block.render.defaultBundledFontRegistry
@@ -29,6 +33,7 @@ import app.shareguard.block.verify.AssuranceConsequenceApproval
 import app.shareguard.block.verify.DependencyExpectation
 import app.shareguard.block.verify.DependencyVerificationScope
 import app.shareguard.block.verify.FinalVerificationCoordinator
+import app.shareguard.block.verify.FinalVerificationCatalog
 import app.shareguard.block.verify.FinalVerificationOutcome
 import app.shareguard.block.verify.FinalVerificationPolicy
 import app.shareguard.block.verify.IdempotenceInspection
@@ -78,10 +83,15 @@ import app.shareguard.core.model.FindingStatus
 import app.shareguard.core.model.ImportAnchor
 import app.shareguard.core.model.InputKind
 import app.shareguard.core.model.ImageArtifact
+import app.shareguard.core.model.ImageRegion
+import app.shareguard.core.model.ImageRegionId
+import app.shareguard.core.model.ImageRegionPolicy
+import app.shareguard.core.model.ImageRegionType
 import app.shareguard.core.model.LayoutElement
 import app.shareguard.core.model.LayoutKind
 import app.shareguard.core.model.LayoutModel
 import app.shareguard.core.model.MimeType
+import app.shareguard.core.model.NormalizedRect
 import app.shareguard.core.model.OutputBundle
 import app.shareguard.core.model.OutputMode
 import app.shareguard.core.model.ParagraphBlock
@@ -106,6 +116,7 @@ import app.shareguard.core.model.TraceOutcome
 import app.shareguard.core.model.TransformationCategory
 import app.shareguard.core.model.WallClockInstant
 import app.shareguard.core.model.WorkflowId
+import app.shareguard.core.model.VerificationStatus
 import app.shareguard.core.model.UserDecision
 import app.shareguard.core.model.toImmutableList
 import app.shareguard.core.pipeline.BuiltInPresets
@@ -125,17 +136,20 @@ class TextReviewPlan internal constructor(
     val textResult: TextCanonicalizationResult,
     val urlResult: UrlProcessingResult,
     val ocrReviewFinding: Finding?,
+    val imageExclusionFinding: Finding?,
 ) {
     val textReviewCodes: Set<TextReviewCode> = textResult.reviewGates.filter { it.blocking }.map { it.code }.toSet()
     val urlReviewCodes: Set<UrlReviewCode> = urlResult.analysisBatch.reviewGates.filter { it.blocking }.map { it.code }.toSet()
-    val requiresReview: Boolean = ocrReviewFinding != null || textReviewCodes.isNotEmpty() || urlReviewCodes.isNotEmpty() ||
-        textResult.failures.isNotEmpty() || urlResult.analysisBatch.failures.isNotEmpty()
+    val requiresReview: Boolean = ocrReviewFinding != null || imageExclusionFinding != null ||
+        textReviewCodes.isNotEmpty() || urlReviewCodes.isNotEmpty() || textResult.failures.isNotEmpty() ||
+        urlResult.analysisBatch.failures.isNotEmpty()
 
     override fun toString(): String = "TextReviewPlan(content=redacted,reviewRequired=$requiresReview)"
 }
 
 class ApprovedTextPlan internal constructor(
     val sourceText: String,
+    val inputKind: InputKind,
     val textResult: TextCanonicalizationResult,
     val urlResult: UrlProcessingResult,
     val canonicalText: String,
@@ -184,7 +198,14 @@ class CanonicalTextWorkflow(
             revision,
             idPrefix = "url",
         )
-        return TextReviewPlan(text, inputKind, textResult, urlResult, ocrReviewFinding(inputKind))
+        return TextReviewPlan(
+            text,
+            inputKind,
+            textResult,
+            urlResult,
+            ocrReviewFinding(inputKind),
+            imageExclusionFinding(inputKind),
+        )
     }
 
     fun approve(plan: TextReviewPlan, allReviewItemsApproved: Boolean): ApprovedTextPlan {
@@ -255,14 +276,48 @@ class CanonicalTextWorkflow(
             )
             Triple(listOf(finding.copy(status = FindingStatus.ACCEPTED)), listOf(decision), listOf(change))
         }
+        val imageExclusionEvidence = plan.imageExclusionFinding?.let { finding ->
+            val revisionBlock = BlockId("REV-006")
+            val decisionId = DecisionId("decision-image-source-exclusion")
+            val decision = UserDecision.create(
+                decisionId = decisionId,
+                findingIds = listOf(finding.findingId),
+                action = DecisionAction.EXCLUDE_REGION,
+                status = DecisionStatus.APPROVED,
+                semanticImpact = SemanticImpact.POSSIBLE,
+                rationale = SafeSummary("User approved removing the complete original image raster from canonical outputs"),
+                canonicalRevision = revision,
+            )
+            val change = ChangeEntry(
+                changeId = ChangeId("change-image-source-exclusion"),
+                blockId = revisionBlock,
+                blockVersion = NormativeBlockCatalog.registry.require(revisionBlock).blockVersion,
+                canonicalRevision = revision,
+                category = FindingCategory.IMAGE_REGION,
+                sourceLocation = null,
+                beforeRepresentation = null,
+                afterRepresentation = null,
+                reason = SafeSummary("WHOLE_SOURCE_PIXEL_REGION_EXCLUDED"),
+                reversibleBeforeExport = true,
+                semanticImpact = SemanticImpact.POSSIBLE,
+                reviewLink = ReviewLink(
+                    decisionId,
+                    listOf(finding.findingId).toImmutableList(),
+                    ReviewStatus.APPROVED,
+                ),
+                verificationId = null,
+            )
+            Triple(listOf(finding.copy(status = FindingStatus.ACCEPTED)), listOf(decision), listOf(change))
+        }
         return ApprovedTextPlan(
             plan.sourceText,
+            plan.inputKind,
             textApproved,
             urlApproved,
             finalText,
-            ocrEvidence?.first.orEmpty(),
-            ocrEvidence?.second.orEmpty(),
-            ocrEvidence?.third.orEmpty(),
+            ocrEvidence?.first.orEmpty() + imageExclusionEvidence?.first.orEmpty(),
+            ocrEvidence?.second.orEmpty() + imageExclusionEvidence?.second.orEmpty(),
+            ocrEvidence?.third.orEmpty() + imageExclusionEvidence?.third.orEmpty(),
         )
     }
 
@@ -279,6 +334,7 @@ class CanonicalTextWorkflow(
     ): TextWorkflowCompletion {
         require(semanticDiffApproved) { "SEMANTIC_DIFF_NOT_APPROVED" }
         require(assuranceConsequenceApproved) { "ASSURANCE_CONSEQUENCE_NOT_APPROVED" }
+        require(plan.inputKind == inputKind) { "APPROVED_PLAN_INPUT_KIND_MISMATCH" }
         require(outputMode != OutputMode.DERIVATIVE_IMAGE) { "DERIVATIVE_OUTPUT_REQUIRES_SOURCE_REGION_REVIEW" }
         val revision = CanonicalRevision(1)
         val textApproved = plan.textResult
@@ -293,25 +349,34 @@ class CanonicalTextWorkflow(
         val findings = (textApproved.findings + urlApproved.analysisBatch.findings + plan.supplementalFindings).toImmutableList()
         val decisions = (textApproved.decisions + urlApproved.canonicalizations.flatMap { it.decisions } +
             plan.supplementalDecisions).toImmutableList()
-        val ledgerEntries = (textApproved.ledgerEntries + urlApproved.canonicalizations.flatMap { it.ledgerEntries } +
+        val baseLedgerEntries = (textApproved.ledgerEntries + urlApproved.canonicalizations.flatMap { it.ledgerEntries } +
             plan.supplementalLedgerEntries)
             .toImmutableList()
         val ledgerId = ChangeLedgerId("ledger-${randomToken()}")
-        val ledger = ChangeLedger(ledgerId, revision, ledgerEntries)
         val blockId = CanonicalBlockId("content-1")
-        val dependencyMap = SourceDependencyMap.create(
-            revision,
-            listOf(
-                SourceDependency(
-                    dependencyId = DependencyId("canonical-input-1"),
-                    type = DependencyType.CANONICAL_DOCUMENT_REVISION,
-                    origin = DependencyOrigin.CANONICAL_DOCUMENT,
+        val dependencyMap = if (inputKind == InputKind.IMAGE) {
+            ImageSourceDependencyMapper().build(
+                ImageDependencyDeclaration(
                     canonicalRevision = revision,
-                    canonicalBlockId = blockId,
-                    reason = SafeSummary("Reviewed canonical text revision"),
+                    ocrDerivedText = listOf(BlockDependencyUse(blockId)),
+                    userDecisions = decisions.map { it.decisionId },
                 ),
-            ),
-        )
+            ).dependencyMap
+        } else {
+            SourceDependencyMap.create(
+                revision,
+                listOf(
+                    SourceDependency(
+                        dependencyId = DependencyId("canonical-input-1"),
+                        type = DependencyType.CANONICAL_DOCUMENT_REVISION,
+                        origin = DependencyOrigin.CANONICAL_DOCUMENT,
+                        canonicalRevision = revision,
+                        canonicalBlockId = blockId,
+                        reason = SafeSummary("Reviewed canonical text revision"),
+                    ),
+                ),
+            )
+        }
         val run = TextRun.create(
             canonicalText = finalText,
             scriptSet = textApproved.inspection.scalarInventory.map { it.script }.distinct(),
@@ -319,13 +384,29 @@ class CanonicalTextWorkflow(
             confidenceClass = ConfidenceClass.CERTAIN_BY_PARSER,
             userLocked = true,
         )
-        val document = CanonicalDocument(
+        val draftDocument = CanonicalDocument(
             schemaVersion = SchemaVersion(1),
             revision = revision,
             declaredLanguagePolicy = textApproved.inspection.languageResolution.policy,
             rootBlocks = listOf(ParagraphBlock(blockId, listOf(run).toImmutableList())).toImmutableList(),
             urlTokens = urlTokens.toImmutableList(),
-            imageRegions = emptyList<app.shareguard.core.model.ImageRegion>().toImmutableList(),
+            imageRegions = if (inputKind == InputKind.IMAGE) {
+                listOf(
+                    ImageRegion(
+                        regionId = ImageRegionId("source-image-whole"),
+                        regionType = ImageRegionType.UNKNOWN,
+                        sourceBounds = NormalizedRect(0f, 0f, 1f, 1f),
+                        canonicalBounds = null,
+                        policy = ImageRegionPolicy.REMOVE,
+                        sourcePixelRetained = false,
+                        replacementAssetId = null,
+                        userApproved = true,
+                        dependencyReason = SafeSummary("User approved excluding the complete source raster"),
+                    ),
+                ).toImmutableList()
+            } else {
+                emptyList<ImageRegion>().toImmutableList()
+            },
             layoutModel = LayoutModel(
                 LayoutKind.PLAIN_DOCUMENT,
                 listOf(LayoutElement(blockId, null, 0)).toImmutableList(),
@@ -335,22 +416,30 @@ class CanonicalTextWorkflow(
             sourceDependencyMap = dependencyMap,
             changeLedgerReference = ledgerId,
         )
-        val bytes = finalText.encodeToByteArray()
+        val serializedText = CanonicalTextSerializer().serialize(draftDocument, revision).text
+        check(serializedText == finalText) { "CANONICAL_TEXT_SERIALIZATION_MISMATCH" }
+        val textBytes = if (outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {
+            serializedText.encodeToByteArray()
+        } else {
+            null
+        }
         val artifactIdentity = randomToken()
-        val artifact = TextArtifact(
-            artifactId = ArtifactId("text-$artifactIdentity"),
-            reference = ArtifactReference("text-ref-$artifactIdentity"),
-            artifactRevision = ArtifactRevision(1),
-            canonicalRevision = revision,
-            mimeType = MimeType("text/plain"),
-            digest = digester.digest(bytes),
-            byteCount = ByteCount(bytes.size.toLong()),
-            canonicalText = finalText,
-        )
+        val artifact = textBytes?.let { bytes ->
+            TextArtifact(
+                artifactId = ArtifactId("text-$artifactIdentity"),
+                reference = ArtifactReference("text-ref-$artifactIdentity"),
+                artifactRevision = ArtifactRevision(1),
+                canonicalRevision = revision,
+                mimeType = MimeType("text/plain"),
+                digest = digester.digest(bytes),
+                byteCount = ByteCount(bytes.size.toLong()),
+                canonicalText = serializedText,
+            )
+        }
         val rendered: EncodedRenderedImage? = if (outputMode in setOf(OutputMode.REBUILT_IMAGE, OutputMode.BOTH)) {
             CanonicalImageRenderer(defaultBundledFontRegistry(context)).render(
                 CanonicalRenderRequest(
-                    document = document,
+                    document = draftDocument,
                     policy = CanonicalRenderPolicy(
                         theme = CanonicalRenderTheme.DOCUMENT,
                         resourcePlan = RenderResourcePlan(
@@ -372,6 +461,15 @@ class CanonicalTextWorkflow(
         } else {
             null
         }
+        val document = if (rendered == null) {
+            draftDocument
+        } else {
+            draftDocument.copy(sourceDependencyMap = rendered.sourceDependencyMap)
+        }
+        val ledgerEntries = (
+            baseLedgerEntries + outputTransformationEntries(outputMode, rendered, revision)
+        ).toImmutableList()
+        val ledger = ChangeLedger(ledgerId, revision, ledgerEntries)
         val imageArtifact: ImageArtifact? = rendered?.let { encoded ->
             RenderedArtifactFactory(digester).rebuiltImage(
                 encoded = encoded,
@@ -386,7 +484,7 @@ class CanonicalTextWorkflow(
         val bundle = OutputBundle(
             outputMode = outputMode,
             canonicalRevision = revision,
-            textArtifact = artifact.takeIf { outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH) },
+            textArtifact = artifact,
             imageArtifact = imageArtifact,
         )
         val preset = preset(inputKind, outputMode)
@@ -411,12 +509,12 @@ class CanonicalTextWorkflow(
         ).copy(
             executionRevision = ExecutionRevision((manifest.size + 1).toLong()),
             canonicalDocument = document,
-            textArtifact = artifact.takeIf { outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH) },
+            textArtifact = artifact,
             imageArtifact = imageArtifact,
             findings = findings,
             decisions = decisions,
             changes = ledgerEntries,
-            sourceDependencyMap = dependencyMap,
+            sourceDependencyMap = document.sourceDependencyMap,
             lifecycleState = ExecutionLifecycleState.RUNNING,
         )
         val transformations = ledgerEntries.groupBy { it.blockId }.map { (id, entries) ->
@@ -430,7 +528,7 @@ class CanonicalTextWorkflow(
         val staging = TransientArtifactStaging.create(context, session)
         val imageBytes = rendered?.copyBytes()
         try {
-            if (bundle.textArtifact != null) staging.stage(artifact, bytes)
+            artifact?.let { staging.stage(it, requireNotNull(textBytes)) }
             if (imageArtifact != null && imageBytes != null) staging.stage(imageArtifact, imageBytes)
             val approvedFinalUnicodeCodes = textCanonicalizer.canonicalize(
                 TextProcessingInput.create(finalText, TextSourceKind.PLAIN_TEXT),
@@ -447,10 +545,10 @@ class CanonicalTextWorkflow(
                 approvedCanonicalText = finalText,
                 appliedTransformations = transformations,
                 dependencyScope = DependencyVerificationScope(
-                    expectedEntries = dependencyMap.entries.map {
+                    expectedEntries = document.sourceDependencyMap.entries.map {
                         DependencyExpectation(it.type, it.canonicalBlockId, it.imageRegionId, it.decisionId?.value)
                     }.toSet(),
-                    exercisedTypes = dependencyMap.entries.map { it.type }.toSet(),
+                    exercisedTypes = document.sourceDependencyMap.entries.map { it.type }.toSet(),
                     platformLimitationCodes = setOf("PLATFORM_LIBRARY_INTERNALS_NOT_ENUMERATED"),
                 ),
                 sourceCanaries = listOf(
@@ -465,6 +563,8 @@ class CanonicalTextWorkflow(
                     ReferenceSurface.utf8(ReferenceSurfaceKind.PERSISTABLE_SUMMARY, "CANONICAL_RESULT_VERIFICATION"),
                 ),
                 reviewEvidence = ReviewEvidence.create(
+                    approvedRegionPolicies = document.imageRegions.takeIf { it.isNotEmpty() }
+                        ?.associate { it.regionId to it.policy },
                     semanticDiffApproval = SemanticDiffApproval(revision, ledgerEntries.map { it.changeId }.toSet()),
                     assuranceConsequenceApproval = AssuranceConsequenceApproval(
                         preset.assuranceCeiling,
@@ -499,11 +599,11 @@ class CanonicalTextWorkflow(
                     sensitiveLoggingInspector = AppSensitiveLoggingInspector(),
                 ),
             )
-            recordContentFreeTrace(session, manifest, transformations, revision)
+            recordContentFreeTrace(session, manifest, transformations, revision, outcome)
             val persisted = if (outcome.canPersistVerifiedResult) {
                 val payloads = buildMap {
                     if (bundle.textArtifact != null) {
-                        put(ArtifactKind.CANONICAL_TEXT, SecretBytes.copyOf(bytes))
+                        put(ArtifactKind.CANONICAL_TEXT, SecretBytes.copyOf(requireNotNull(textBytes)))
                     }
                     if (imageArtifact != null && imageBytes != null) {
                         put(ArtifactKind.REBUILT_IMAGE, SecretBytes.copyOf(imageBytes))
@@ -529,10 +629,75 @@ class CanonicalTextWorkflow(
             }
             return TextWorkflowCompletion(outcome, persisted, finalText, ledger, imageBytes?.copyOf())
         } finally {
-            bytes.fill(0)
+            textBytes?.fill(0)
             imageBytes?.fill(0)
             staging.close()
         }
+    }
+
+    private fun outputTransformationEntries(
+        outputMode: OutputMode,
+        rendered: EncodedRenderedImage?,
+        revision: CanonicalRevision,
+    ): List<ChangeEntry> = buildList {
+        if (outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {
+            add(outputTransformation("OUT-TXT-001", "change-output-text-serialize", "CANONICAL_TEXT_SERIALIZED", revision))
+        }
+        rendered?.operations?.distinctBy { it.code }?.forEach { operation ->
+            val blockId = when (operation.code) {
+                RenderOperationCode.FRESH_CANVAS_ALLOCATED -> "REN-001"
+                RenderOperationCode.BUNDLED_FONT_RESOLVED -> "REN-002"
+                RenderOperationCode.TEXT_SHAPED -> "REN-003"
+                RenderOperationCode.GENERIC_PRIMITIVE_RENDERED -> "REN-004"
+                RenderOperationCode.STRUCTURED_REGION_RENDERED -> "REN-005"
+                RenderOperationCode.PLACEHOLDER_RENDERED,
+                RenderOperationCode.REDACTION_RENDERED,
+                -> "REN-006"
+                RenderOperationCode.APPROVED_SOURCE_REGION_IMPORTED -> "REN-007"
+                RenderOperationCode.ALPHA_FLATTENED -> "REN-008"
+                RenderOperationCode.CANONICAL_COLOUR_APPLIED -> "REN-009"
+                RenderOperationCode.PNG_SERIALIZED -> "REN-010"
+                RenderOperationCode.PNG_REOPENED -> "REN-011"
+                RenderOperationCode.DERIVATIVE_RESAMPLED,
+                RenderOperationCode.DERIVATIVE_CHANNELS_CANONICALIZED,
+                RenderOperationCode.DERIVATIVE_QUANTIZED,
+                RenderOperationCode.EPHEMERAL_PERTURBATION_APPLIED,
+                RenderOperationCode.DERIVATIVE_WARNING_ACKNOWLEDGED,
+                -> error("DERIVATIVE_OPERATION_IN_CANONICAL_RENDER")
+            }
+            add(
+                outputTransformation(
+                    blockId = blockId,
+                    changeId = "change-render-${operation.code.name.lowercase()}",
+                    reason = operation.code.name,
+                    revision = revision,
+                ),
+            )
+        }
+    }
+
+    private fun outputTransformation(
+        blockId: String,
+        changeId: String,
+        reason: String,
+        revision: CanonicalRevision,
+    ): ChangeEntry {
+        val id = BlockId(blockId)
+        return ChangeEntry(
+            changeId = ChangeId(changeId),
+            blockId = id,
+            blockVersion = NormativeBlockCatalog.registry.require(id).blockVersion,
+            canonicalRevision = revision,
+            category = if (blockId.startsWith("OUT-")) FindingCategory.FILE_CONTAINER else FindingCategory.LAYOUT,
+            sourceLocation = null,
+            beforeRepresentation = null,
+            afterRepresentation = null,
+            reason = SafeSummary(reason),
+            reversibleBeforeExport = true,
+            semanticImpact = SemanticImpact.NONE,
+            reviewLink = null,
+            verificationId = null,
+        )
     }
 
     private fun idempotenceInspector(): IdempotenceInspector = IdempotenceInspector { approvedText, revision ->
@@ -558,7 +723,29 @@ class CanonicalTextWorkflow(
         manifest: List<ExecutedBlockManifestEntry>,
         transformations: List<AppliedTransformation>,
         canonicalRevision: CanonicalRevision,
+        verification: FinalVerificationOutcome,
     ) {
+        val verificationOutcomes = verification.report.results.mapNotNull { result ->
+            FinalVerificationCatalog.require(result.type).normativeBlockId?.let { blockId ->
+                blockId to when (result.status) {
+                    VerificationStatus.PASS,
+                    VerificationStatus.PASS_WITH_DECLARED_RESIDUAL,
+                    VerificationStatus.NOT_APPLICABLE,
+                    -> TraceOutcome.SUCCESS
+                    VerificationStatus.REVIEW_REQUIRED -> TraceOutcome.REVIEW_REQUIRED
+                    VerificationStatus.NOT_RUN,
+                    VerificationStatus.FAIL,
+                    VerificationStatus.ERROR,
+                    -> TraceOutcome.RECOVERABLE_FAILURE
+                }
+            }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, outcomes) ->
+            when {
+                TraceOutcome.RECOVERABLE_FAILURE in outcomes -> TraceOutcome.RECOVERABLE_FAILURE
+                TraceOutcome.REVIEW_REQUIRED in outcomes -> TraceOutcome.REVIEW_REQUIRED
+                else -> TraceOutcome.SUCCESS
+            }
+        }
         manifest.forEach { entry ->
             BlockPhase.entries.forEach { phase ->
                 session.lifecycle.diagnosticTrace.record(
@@ -567,7 +754,7 @@ class CanonicalTextWorkflow(
                     phase = phase,
                     executionRevision = entry.executionRevision,
                     canonicalRevision = canonicalRevision,
-                    outcome = TraceOutcome.SUCCESS,
+                    outcome = verificationOutcomes[entry.blockId.value] ?: TraceOutcome.SUCCESS,
                     reason = SessionDiagnosticReason.BLOCK_PHASE_COMPLETE,
                 )
             }
@@ -619,6 +806,29 @@ class CanonicalTextWorkflow(
             requiresUserDecision = true,
             status = FindingStatus.REVIEW_REQUIRED,
             evidenceSummary = SafeSummary("Bundled local OCR transcription is untrusted until reviewed"),
+        )
+    } else {
+        null
+    }
+
+    private fun imageExclusionFinding(inputKind: InputKind): Finding? = if (inputKind == InputKind.IMAGE) {
+        Finding(
+            findingId = FindingId("finding-image-source-exclusion"),
+            blockId = BlockId("REV-006"),
+            category = FindingCategory.IMAGE_REGION,
+            severity = Severity.HIGH,
+            confidenceClass = ConfidenceClass.CERTAIN_BY_PARSER,
+            sourceLocation = null,
+            canonicalLocation = null,
+            title = SafeSummary("ORIGINAL_IMAGE_PIXELS_WILL_BE_REMOVED"),
+            explanation = SafeSummary(
+                "Canonical text and rebuilt-image outputs exclude the complete original raster, including non-text visuals",
+            ),
+            suggestedAction = DecisionAction.EXCLUDE_REGION,
+            semanticRisk = SemanticRisk.POSSIBLE_MEANING_CHANGE,
+            requiresUserDecision = true,
+            status = FindingStatus.REVIEW_REQUIRED,
+            evidenceSummary = SafeSummary("Whole-image unknown-region fallback prevents silent source-pixel retention"),
         )
     } else {
         null

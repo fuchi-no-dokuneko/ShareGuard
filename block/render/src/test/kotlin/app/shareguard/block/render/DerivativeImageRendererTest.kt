@@ -62,7 +62,11 @@ class DerivativeImageRendererTest {
             RenderOperationCode.DERIVATIVE_CHANNELS_CANONICALIZED,
             RenderOperationCode.PNG_REOPENED,
         )
+        assertThat(rendered.operations.single {
+            it.code == RenderOperationCode.APPROVED_SOURCE_REGION_IMPORTED
+        }.regionId).isEqualTo("whole-source")
         assertThat(rendered.sourceDependencyMap.retainsSourcePixels).isTrue()
+        assertThat(rendered.sourceDependencyMap).isEqualTo(dependencyMap())
         source.recycle()
     }
 
@@ -122,6 +126,13 @@ class DerivativeImageRendererTest {
                 decisionId = DecisionId("decision-derivative"),
                 sourcePixelRetained = true,
                 reason = SafeSummary("Derivative remains statistically related to source pixels"),
+            ),
+            SourceDependency(
+                DependencyId("derivative-renderer"),
+                DependencyType.RENDERER_GENERATED_PRIMITIVE,
+                DependencyOrigin.GENERATED,
+                REVISION,
+                reason = SafeSummary("Fresh derivative renderer primitive"),
             ),
         ),
     )

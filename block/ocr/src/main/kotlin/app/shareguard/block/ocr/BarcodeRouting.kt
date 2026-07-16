@@ -71,7 +71,7 @@ class BarcodeRoutingService(
 ) {
     suspend fun route(observation: BarcodeObservation): BarcodeRegionResult {
         val regionType = if (observation.formatCode == QR_FORMAT_CODE) ImageRegionType.QR_CODE else ImageRegionType.BARCODE
-        val value = observation.decodedValue
+        val value = observation.decodedValue?.takeIf { it.isNotEmpty() }
         if (value == null) {
             return BarcodeRegionResult(
                 regionType,

@@ -43,6 +43,12 @@ if [[ ! "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; t
   echo "Release tag must match vMAJOR.MINOR.PATCH with an optional suffix." >&2
   exit 1
 fi
+version_name=$(sed -n 's/^shareguardVersionName=//p' gradle.properties)
+if [[ -z "${version_name}" || "${release_tag}" != "v${version_name}" ]]; then
+  printf 'Release tag %s does not match app version v%s.\n' \
+    "${release_tag}" "${version_name:-missing}" >&2
+  exit 1
+fi
 if [[ -e "${output_dir}" ]] && find "${output_dir}" -mindepth 1 -print -quit | grep -q .; then
   printf 'Output directory must be empty: %s\n' "${output_dir}" >&2
   exit 1
@@ -55,10 +61,16 @@ mapfile -d '' apk_inputs < <(
 mapfile -d '' aab_inputs < <(
   find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' -print0
 )
-if (( ${#apk_inputs[@]} == 0 || ${#aab_inputs[@]} == 0 )); then
-  echo "Expected at least one release APK and one release AAB." >&2
+mapfile -d '' sbom_inputs < <(
+  find build/reports/cyclonedx -maxdepth 1 -type f \( -name 'bom.json' -o -name 'bom.xml' \) -print0
+)
+if (( ${#apk_inputs[@]} == 0 || ${#aab_inputs[@]} == 0 || ${#sbom_inputs[@]} != 2 )); then
+  echo "Expected at least one release APK, one release AAB, and CycloneDX JSON/XML SBOMs." >&2
   exit 1
 fi
+python3 scripts/ci/verify-sbom.py \
+  build/reports/cyclonedx/bom.json \
+  build/reports/cyclonedx/bom.xml
 
 present=0
 [[ -n "${ANDROID_KEYSTORE_BASE64-}" ]] && ((present += 1))
@@ -175,8 +187,18 @@ for index in "${!aab_inputs[@]}"; do
   verify_zip_archive "${output_aab}"
 done
 
+for sbom in "${sbom_inputs[@]}"; do
+  case "${sbom}" in
+    *.json) extension=json ;;
+    *.xml) extension=xml ;;
+    *) echo "Unexpected SBOM format: ${sbom}" >&2; exit 1 ;;
+  esac
+  cp -- "${sbom}" "${output_dir}/ShareGuard-${safe_tag}-sbom.cdx.${extension}"
+done
+
 mapfile -d '' artifacts < <(
-  find "${output_dir}" -maxdepth 1 -type f \( -name '*.apk' -o -name '*.aab' \) -print0 \
+  find "${output_dir}" -maxdepth 1 -type f \
+    \( -name '*.apk' -o -name '*.aab' -o -name '*.cdx.json' -o -name '*.cdx.xml' \) -print0 \
     | sort -z
 )
 if (( ${#artifacts[@]} == 0 )); then

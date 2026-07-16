@@ -108,7 +108,11 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                 )
                 AppRoute.OUTPUT_CHOICE -> OutputChoiceScreen(
                     selected = state.selectedOutput,
-                    allowedModes = setOf(OutputMode.TEXT, OutputMode.REBUILT_IMAGE, OutputMode.BOTH),
+                    allowedModes = if (state.inputKind == app.shareguard.core.model.InputKind.IMAGE) {
+                        OutputMode.entries.toSet()
+                    } else {
+                        setOf(OutputMode.TEXT, OutputMode.REBUILT_IMAGE, OutputMode.BOTH)
+                    },
                     onSelect = viewModel::chooseOutput,
                     onContinue = viewModel::finishOutputChoice,
                     onBack = viewModel::finishOutputChoice,
@@ -122,6 +126,9 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                 AppRoute.SEMANTIC_DIFF -> SemanticDiffScreen(
                     canonicalText = state.canonicalPreview,
                     rows = state.ledgerRows,
+                    outputMode = state.selectedOutput,
+                    derivativeWarningAcknowledged = state.derivativeWarningAcknowledged,
+                    onDerivativeWarningAcknowledged = viewModel::setDerivativeWarningAcknowledged,
                     onApprove = viewModel::verifyAndSave,
                     onCancel = viewModel::goHome,
                 )
@@ -242,6 +249,9 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
 private fun SemanticDiffScreen(
     canonicalText: String,
     rows: List<LedgerReviewRow>,
+    outputMode: OutputMode,
+    derivativeWarningAcknowledged: Boolean,
+    onDerivativeWarningAcknowledged: (Boolean) -> Unit,
     onApprove: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -252,13 +262,28 @@ private fun SemanticDiffScreen(
         ) {
             item {
                 Text(
-                    "Review possible semantic impact",
+                    if (outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                        "Experimental derivative warning"
+                    } else {
+                        "Review possible semantic impact"
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.semantics { heading() },
                 )
                 Text("Every application transformation is listed before final verification.")
             }
-            item { LimitationCard("Complete canonical result", canonicalText) }
+            if (outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                item {
+                    LimitationCard(
+                        "Source pixels remain related",
+                        "This output remains semantically and statistically related to the source image. " +
+                            "Unknown robust watermark signals may remain. This mode cannot exceed AS-1 and " +
+                            "does not claim anonymity or watermark removal.",
+                    )
+                }
+            } else {
+                item { LimitationCard("Complete canonical result", canonicalText) }
+            }
             if (rows.isEmpty()) {
                 item { Text("No byte-changing transformation was required.") }
             } else {
@@ -278,15 +303,36 @@ private fun SemanticDiffScreen(
             item {
                 LimitationCard(
                     "Assurance consequence",
-                    "This text workflow can reach reviewed canonical-text assurance only after every " +
-                        "mandatory verifier passes. It does not claim anonymity.",
+                    if (outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                        "The maximum is AS-1 Re-encoded Derivative even when every mandatory verifier passes."
+                    } else {
+                        "This text workflow can reach reviewed canonical-text assurance only after every " +
+                            "mandatory verifier passes. It does not claim anonymity."
+                    },
                 )
+            }
+            if (outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Checkbox(
+                            checked = derivativeWarningAcknowledged,
+                            onCheckedChange = onDerivativeWarningAcknowledged,
+                        )
+                        Column {
+                            Text("I understand this export retains source-pixel relationships", fontWeight = FontWeight.SemiBold)
+                            Text("This acknowledgement applies only to this export and warning version.")
+                        }
+                    }
+                }
             }
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(onClick = onCancel) { Text("Cancel") }
                     Spacer(Modifier.width(12.dp))
-                    Button(onClick = onApprove) { Text("Approve, verify and save") }
+                    Button(
+                        onClick = onApprove,
+                        enabled = outputMode != OutputMode.DERIVATIVE_IMAGE || derivativeWarningAcknowledged,
+                    ) { Text("Approve, verify and save") }
                 }
             }
         }
@@ -318,12 +364,18 @@ private fun ResultScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Text(if (state.savedResultId != null) "Verified and saved" else "Verification blocked", style = MaterialTheme.typography.headlineSmall) }
-            item { LimitationCard("Canonical text", state.canonicalText) }
+            if (state.outputMode != OutputMode.DERIVATIVE_IMAGE) {
+                item { LimitationCard("Canonical text", state.canonicalText) }
+            }
             if (exactImagePreview != null) {
                 item {
                     androidx.compose.foundation.Image(
                         bitmap = exactImagePreview,
-                        contentDescription = "Exact final rebuilt image",
+                        contentDescription = if (state.outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                            "Exact final derivative image"
+                        } else {
+                            "Exact final rebuilt image"
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

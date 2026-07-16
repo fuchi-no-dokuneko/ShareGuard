@@ -110,6 +110,12 @@ class DerivativeImageRenderer(
                 RectF(0f, 0f, output.width.toFloat(), output.height.toFloat()),
                 paint,
             )
+            request.sourceDependencyMap.retainedRegionIds.forEach { regionId ->
+                operations += RenderOperation(
+                    code = RenderOperationCode.APPROVED_SOURCE_REGION_IMPORTED,
+                    regionId = regionId.value,
+                )
+            }
             operations += RenderOperation(RenderOperationCode.DERIVATIVE_RESAMPLED)
             forceOpaqueChannels(output)
             operations += RenderOperation(RenderOperationCode.DERIVATIVE_CHANNELS_CANONICALIZED)
@@ -229,6 +235,7 @@ class DerivativeImageRenderer(
     }
 
     private fun addDerivativeDependencies(input: SourceDependencyMap): SourceDependencyMap {
+        if (input.entries.any { it.type == DependencyType.RENDERER_GENERATED_PRIMITIVE }) return input
         val entries = input.entries.toMutableList()
         val ids = entries.mapTo(mutableSetOf()) { it.dependencyId }
         var index = 1
