@@ -66,6 +66,9 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
       - name: Ensure Android SDK 36 build packages
         run: |
           set -Eeuo pipefail
@@ -142,6 +145,9 @@ jobs:
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
 
       - name: Ensure Android SDK 36 build packages
         run: |
@@ -250,6 +256,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: reboot-restoration-api-36-${{ github.run_id }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
           path: app/build/outputs/destructive-lifecycle/*

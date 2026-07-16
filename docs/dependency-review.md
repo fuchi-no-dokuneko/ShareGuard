@@ -35,6 +35,7 @@ add an Android network permission or perform runtime model/data downloads in the
 | KSP 2.3.10 / Room compiler | Generate Room implementation and schema JSON | Build only; generated schema is checked in and migration-tested. |
 | JUnit 4, Truth, Turbine, Robolectric | Deterministic unit, Flow and host Android tests | Test configurations only. |
 | AndroidX Test, Espresso, Compose UI test, Work/Room testing | Managed-emulator instrumentation, migrations, URI/share and accessibility assertions | Test APK only. |
+| `android-actions/setup-android` v3 (`9fc6c4e`) | Provisions maintained Android SDK command-line tools on disposable GitHub-hosted runners | CI only; MIT-licensed action pinned to an immutable commit. |
 
 ## Release gates
 
