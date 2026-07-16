@@ -38,6 +38,7 @@ fun SavedResultDetailScreen(
     onShare: () -> Unit,
     onRevalidate: () -> Unit,
     onExport: (ArtifactKind) -> Unit,
+    onEditAsNew: (() -> Unit)?,
     onRename: () -> Unit,
     onToggleFavourite: () -> Unit,
     onDelete: () -> Unit,
@@ -101,6 +102,14 @@ fun SavedResultDetailScreen(
                     OutlinedButton(onClick = onToggleFavourite) {
                         Text(if (state.item.favourite) "Remove favourite" else "Favourite")
                     }
+                }
+            }
+            if (onEditAsNew != null) {
+                item {
+                    OutlinedButton(onClick = onEditAsNew, modifier = Modifier.fillMaxWidth()) {
+                        Text("Edit as a new result")
+                    }
+                    Text("The verified artifact above is not overwritten. Completing the edited workflow creates a new Saved Result.")
                 }
             }
             if (state.item.outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {

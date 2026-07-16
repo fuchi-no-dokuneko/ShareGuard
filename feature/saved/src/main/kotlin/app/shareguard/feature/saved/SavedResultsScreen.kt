@@ -102,7 +102,19 @@ fun SavedResultsScreen(
             if (state.selectedIds.isNotEmpty()) {
                 Button(onClick = onDeleteSelected) { Text("Delete ${state.selectedIds.size} selected") }
             }
-            if (state.items.isEmpty()) {
+            if (state.loading) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    Text("Loading verified Saved Results from private storage…")
+                }
+            } else if (state.storageErrorCode != null) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Saved Results are temporarily unavailable.", fontWeight = FontWeight.SemiBold)
+                        Text("Error code: ${state.storageErrorCode}")
+                        Text("No result has been treated as shareable. Return and try again after checking local storage.")
+                    }
+                }
+            } else if (state.items.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     Text(
                         "No verified results match this view. Results appear here only after verification, " +

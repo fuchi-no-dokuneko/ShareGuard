@@ -25,6 +25,8 @@ import app.shareguard.core.model.SavedResult
 import app.shareguard.core.model.SavedResultId
 import app.shareguard.core.model.SafeSummary
 import app.shareguard.core.model.SemanticRisk
+import app.shareguard.core.model.VerificationReport
+import app.shareguard.core.pipeline.BuiltInPresets
 import app.shareguard.core.session.AdvisoryImportTimer
 import app.shareguard.core.session.AdvisoryTimerReading
 import app.shareguard.core.session.AndroidMonotonicClockSource
@@ -42,6 +44,7 @@ import app.shareguard.feature.saved.SavedLayout
 import app.shareguard.feature.saved.SavedResultCardUiModel
 import app.shareguard.feature.saved.SavedResultDetailUiState
 import app.shareguard.feature.saved.SavedSort
+import app.shareguard.feature.workflow.BlockDetailTab
 import java.io.FileOutputStream
 import java.text.DateFormat
 import java.util.Date
@@ -97,6 +100,8 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     private val savedResultTimers = mutableMapOf<String, AdvisoryImportTimer>()
     private val bootSessionReferenceSource = EstimatedBootSessionReferenceSource()
     private var imageClaimedMime: String? = null
+    private var pendingIncomingText: String? = null
+    private var pendingIncomingImage: Uri? = null
 
     fun openTextEntry(initialText: String = "", method: ImportMethod = ImportMethod.DIRECT_ENTRY) {
         clearTransientSession()
@@ -107,8 +112,23 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             text = initialText,
             inputKind = InputKind.TEXT,
             selectedOutput = OutputMode.TEXT,
+            selectedPresetId = BuiltInPresets.textBalanced.presetId,
             shareJitterEnabled = shareJitterEnabled,
         )
+    }
+
+    fun chooseIncomingText() {
+        val text = pendingIncomingText ?: return
+        pendingIncomingText = null
+        pendingIncomingImage = null
+        openTextEntry(text, ImportMethod.ANDROID_SHARE)
+    }
+
+    fun chooseIncomingImage() {
+        val image = pendingIncomingImage ?: return
+        pendingIncomingText = null
+        pendingIncomingImage = null
+        importImage(image, ImportMethod.ANDROID_SHARE)
     }
 
     fun openOutputChoice() {
@@ -120,12 +140,34 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         if (outputMode == OutputMode.DERIVATIVE_IMAGE && inputKind != InputKind.IMAGE) return
         _state.value = _state.value.copy(
             selectedOutput = outputMode,
+            selectedPresetId = defaultPreset(inputKind, outputMode),
             derivativeWarningAcknowledged = false,
         )
     }
 
     fun finishOutputChoice() {
         _state.value = _state.value.copy(route = outputChoiceReturnRoute)
+    }
+
+    fun openPresetChoice() {
+        if (_state.value.route != AppRoute.OUTPUT_CHOICE) return
+        _state.value = _state.value.copy(route = AppRoute.PRESET_CHOICE)
+    }
+
+    fun choosePreset(presetId: String) {
+        val preset = runCatching { BuiltInPresets.require(presetId) }.getOrNull() ?: return
+        if (preset.inputKind != inputKind || preset.outputMode != _state.value.selectedOutput) return
+        _state.value = _state.value.copy(selectedPresetId = presetId)
+    }
+
+    fun finishPresetChoice() {
+        if (_state.value.route != AppRoute.PRESET_CHOICE) return
+        _state.value = _state.value.copy(route = outputChoiceReturnRoute)
+    }
+
+    fun backToOutputChoice() {
+        if (_state.value.route != AppRoute.PRESET_CHOICE) return
+        _state.value = _state.value.copy(route = AppRoute.OUTPUT_CHOICE)
     }
 
     fun updateText(value: String) {
@@ -140,6 +182,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             route = AppRoute.PROCESSING,
             inputKind = InputKind.IMAGE,
             selectedOutput = OutputMode.REBUILT_IMAGE,
+            selectedPresetId = BuiltInPresets.imageFullRebuild.presetId,
             shareJitterEnabled = shareJitterEnabled,
         )
         viewModelScope.launch {
@@ -220,6 +263,17 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     fun submitText() {
         val text = _state.value.text
         if (_state.value.route != AppRoute.TEXT_INPUT) return
+        if (text.isEmpty()) return
+        _state.value = _state.value.copy(
+            route = AppRoute.WORKFLOW,
+            selectedWorkflowBlockId = null,
+            selectedBlockDetailTab = BlockDetailTab.PURPOSE,
+        )
+    }
+
+    fun runWorkflow() {
+        val text = _state.value.text
+        if (_state.value.route != AppRoute.WORKFLOW) return
         if (inputKind == InputKind.IMAGE && _state.value.selectedOutput == OutputMode.DERIVATIVE_IMAGE) {
             openDerivativeReview()
             return
@@ -256,6 +310,29 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                     openSemanticDiff(textWorkflow.approve(plan, allReviewItemsApproved = false))
                 }
             }.onFailure(::showError)
+        }
+    }
+
+    fun openWorkflowBlock(blockId: String) {
+        if (_state.value.route != AppRoute.WORKFLOW) return
+        val preset = BuiltInPresets.require(_state.value.selectedPresetId)
+        if (preset.blockReferences.none { it.blockId.value == blockId }) return
+        _state.value = _state.value.copy(
+            route = AppRoute.BLOCK_DETAIL,
+            selectedWorkflowBlockId = blockId,
+            selectedBlockDetailTab = BlockDetailTab.PURPOSE,
+        )
+    }
+
+    fun selectBlockDetailTab(tab: BlockDetailTab) {
+        if (_state.value.route == AppRoute.BLOCK_DETAIL) {
+            _state.value = _state.value.copy(selectedBlockDetailTab = tab)
+        }
+    }
+
+    fun closeWorkflowBlock() {
+        if (_state.value.route == AppRoute.BLOCK_DETAIL) {
+            _state.value = _state.value.copy(route = AppRoute.WORKFLOW, selectedWorkflowBlockId = null)
         }
     }
 
@@ -370,6 +447,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                     assuranceConsequenceApproved = true,
                     inputKind = inputKind,
                     outputMode = _state.value.selectedOutput,
+                    presetId = _state.value.selectedPresetId,
                 )
             }.onSuccess { completion ->
                 val exactImagePreview = completion.exactImagePreviewBytes?.let { encoded ->
@@ -404,6 +482,10 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                         statusLines = completion.verification.humanReadableReport.statusLines,
                         limitationLines = completion.verification.humanReadableReport.limitationLines,
                         blockingChecks = completion.verification.blockingVerificationTypes.map { it.name },
+                        verificationReportRows = verificationReportRows(
+                            completion.verification.report,
+                            completion.changeLedger.entries.size,
+                        ),
                     ),
                 )
             }.onFailure { failure ->
@@ -474,6 +556,10 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                         statusLines = completion.verification.humanReadableReport.statusLines,
                         limitationLines = completion.verification.humanReadableReport.limitationLines,
                         blockingChecks = completion.verification.blockingVerificationTypes.map { it.name },
+                        verificationReportRows = verificationReportRows(
+                            completion.verification.report,
+                            completion.changeLedger.entries.size,
+                        ),
                     ),
                 )
             }.onFailure { failure ->
@@ -498,6 +584,8 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             route = AppRoute.SAVED_RESULTS,
             savedDetail = null,
             errorCode = null,
+            savedResultsLoading = true,
+            savedResultsErrorCode = null,
         )
         startReferenceTimer(null)
         refreshSavedResults()
@@ -509,9 +597,15 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 .onSuccess {
                     allSavedResults = it
                     savedResultTimers.keys.retainAll(it.map { result -> result.savedResultId.value }.toSet())
+                    _state.value = _state.value.copy(savedResultsLoading = false, savedResultsErrorCode = null)
                     applySavedView()
                 }
-                .onFailure(::showError)
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        savedResultsLoading = false,
+                        savedResultsErrorCode = "SAVED_RESULTS_STORAGE_UNAVAILABLE",
+                    )
+                }
         }
     }
 
@@ -678,6 +772,11 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
         }
+    }
+
+    fun editSavedResultAsNew() {
+        val text = _state.value.savedDetail?.canonicalTextPreview ?: return
+        openTextEntry(text, ImportMethod.DIRECT_ENTRY)
     }
 
     fun openRenameSavedResult(id: String) {
@@ -947,9 +1046,25 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         _state.value = persistentUiDefaults()
     }
 
+    fun openVerificationReport() {
+        if (_state.value.route == AppRoute.RESULT && _state.value.result != null) {
+            _state.value = _state.value.copy(route = AppRoute.VERIFICATION_REPORT)
+        }
+    }
+
+    fun closeVerificationReport() {
+        if (_state.value.route == AppRoute.VERIFICATION_REPORT) {
+            _state.value = _state.value.copy(route = AppRoute.RESULT)
+        }
+    }
+
     fun navigateBack() {
         when (_state.value.route) {
             AppRoute.OUTPUT_CHOICE -> finishOutputChoice()
+            AppRoute.PRESET_CHOICE -> backToOutputChoice()
+            AppRoute.WORKFLOW -> _state.value = _state.value.copy(route = AppRoute.TEXT_INPUT)
+            AppRoute.BLOCK_DETAIL -> closeWorkflowBlock()
+            AppRoute.VERIFICATION_REPORT -> closeVerificationReport()
             AppRoute.TEXT_INPUT -> backFromTextInput()
             AppRoute.SAVED_DETAIL -> openSavedResults()
             AppRoute.SAVED_SETTINGS -> openSavedResults()
@@ -963,6 +1078,25 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
 
     fun openAbout() {
         _state.value = _state.value.copy(route = AppRoute.ABOUT)
+    }
+
+    fun recoverAsEditableText() {
+        val recoverableText = _state.value.text
+        if (recoverableText.isEmpty()) {
+            goHome()
+            return
+        }
+        clearTransientSession()
+        importMethod = ImportMethod.DIRECT_ENTRY
+        inputKind = InputKind.TEXT
+        _state.value = persistentUiDefaults().copy(
+            route = AppRoute.TEXT_INPUT,
+            text = recoverableText,
+            inputKind = InputKind.TEXT,
+            selectedOutput = OutputMode.TEXT,
+            selectedPresetId = BuiltInPresets.textBalanced.presetId,
+            shareJitterEnabled = shareJitterEnabled,
+        )
     }
 
     fun toggleShareJitter(enabled: Boolean) {
@@ -984,11 +1118,18 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun consumeIncomingIntent(intent: Intent) {
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            showError(IllegalArgumentException("MULTIPLE_IMAGES_NOT_SUPPORTED_USE_ONE_SOURCE"))
+            return
+        }
         if (intent.action != Intent.ACTION_SEND) return
         val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
         val sharedImage = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
         if (sharedText.isNotEmpty() && sharedImage != null) {
-            showError(IllegalArgumentException("MULTIPLE_SOURCE_KINDS_REQUIRE_EXPLICIT_CHOICE"))
+            clearTransientSession()
+            pendingIncomingText = sharedText
+            pendingIncomingImage = sharedImage
+            _state.value = persistentUiDefaults().copy(route = AppRoute.SOURCE_CHOICE)
         } else if (intent.type?.startsWith("text/") == true) {
             if (sharedText.isNotEmpty()) openTextEntry(sharedText, ImportMethod.ANDROID_SHARE)
         } else if (intent.type?.startsWith("image/") == true && sharedImage != null) {
@@ -1134,16 +1275,20 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun TextReviewPlan.toReviewItems(): List<ReviewItemUiModel> {
         val source = sourceText
+        val scalarsByIndex = textResult.inspection.scalarInventory.associateBy { it.scalarIndex }
         return (
             textResult.findings + urlResult.analysisBatch.findings +
                 listOfNotNull(ocrReviewFinding, imageExclusionFinding)
             )
             .filter { it.requiresUserDecision || it.semanticRisk != SemanticRisk.NONE }
             .distinctBy { it.findingId }
-            .map { finding -> finding.toReviewItem(source) }
+            .map { finding ->
+                val scalar = finding.sourceLocation?.scalarStart?.let(scalarsByIndex::get)
+                finding.toReviewItem(source, scalar?.unicodeName, scalar?.script?.name)
+            }
     }
 
-    private fun Finding.toReviewItem(source: String): ReviewItemUiModel {
+    private fun Finding.toReviewItem(source: String, unicodeName: String?, scriptName: String?): ReviewItemUiModel {
         val range = sourceLocation?.let { location ->
             val start = location.scalarStart ?: return@let null
             val end = location.scalarEndExclusive ?: return@let null
@@ -1153,6 +1298,15 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
                 source.substring(utfStart, utfEnd)
             }.getOrNull()
         }
+        val expertDetails = range?.takeIf(String::isNotEmpty)?.codePointAt(0)?.let { codePoint ->
+            listOf(
+                "Visual glyph" to String(Character.toChars(codePoint)),
+                "Unicode name" to (unicodeName ?: Character.getName(codePoint) ?: "Unassigned"),
+                "Code point" to "U+${codePoint.toString(16).uppercase().padStart(4, '0')}",
+                "Script" to (scriptName?.lowercase()?.replaceFirstChar(Char::uppercase) ?: "See inspection evidence"),
+                "Neighbouring source span" to range,
+            )
+        }.orEmpty()
         return ReviewItemUiModel(
             id = findingId.value,
             group = when {
@@ -1169,6 +1323,9 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             surroundingContext = range,
             before = range ?: if (semanticRisk != SemanticRisk.NONE) "Affected source span" else null,
             after = if (semanticRisk != SemanticRisk.NONE) "See the complete semantic diff before verification" else null,
+            explanation = explanation.value,
+            evidenceSummary = evidenceSummary.value,
+            expertDetails = expertDetails,
             semanticRisk = semanticRisk,
             allowedActions = setOf(suggestedAction ?: DecisionAction.ACCEPT_PROPOSED_CHANGE),
         )
@@ -1180,12 +1337,43 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         OutputMode.DERIVATIVE_IMAGE -> ArtifactKind.DERIVATIVE_IMAGE
     }
 
+    private fun verificationReportRows(report: VerificationReport, changeCount: Int): List<Pair<String, String>> =
+        listOf(
+            "Final assurance" to report.assuranceClass.name.replace('_', ' '),
+            "Canonical revision" to report.canonicalRevision.value.toString(),
+            "Artifact revision" to report.artifactRevision.value.toString(),
+            "Executed block versions" to report.executedBlockManifest.joinToString { entry ->
+                "${entry.blockId.value}@${entry.blockVersion.value}"
+            },
+            "Changes applied" to changeCount.toString(),
+            "Unresolved findings" to report.unresolvedFindingList.size.toString(),
+            "Retained source regions" to report.sourcePixelRegionList.size.toString(),
+            "Final metadata entries" to report.finalMetadataInventory.size.toString(),
+            "Final Unicode findings" to report.finalUnicodeFindings.size.toString(),
+            "Final URL findings" to report.finalUrlFindings.size.toString(),
+            "OCR round-trip findings" to report.ocrRoundTripFindings.size.toString(),
+            "Verifier results" to (report.results + report.sourceReferenceAudit).joinToString { result ->
+                "${result.type.name}:${result.status.name}"
+            },
+        )
+
     private fun ManagedShareDescriptor.exportExtension(): String = when (mimeType.value) {
         "text/plain" -> "txt"
         "image/png" -> "png"
         "image/jpeg" -> "jpg"
         "image/webp" -> "webp"
         else -> if (artifactKind == ArtifactKind.CANONICAL_TEXT) "txt" else "bin"
+    }
+
+    private fun defaultPreset(input: InputKind, output: OutputMode): String = when (input to output) {
+        InputKind.TEXT to OutputMode.TEXT -> BuiltInPresets.textBalanced.presetId
+        InputKind.TEXT to OutputMode.REBUILT_IMAGE -> BuiltInPresets.textRebuiltImage.presetId
+        InputKind.TEXT to OutputMode.BOTH -> BuiltInPresets.textAndRebuiltImage.presetId
+        InputKind.IMAGE to OutputMode.TEXT -> BuiltInPresets.imageCanonicalText.presetId
+        InputKind.IMAGE to OutputMode.REBUILT_IMAGE -> BuiltInPresets.imageFullRebuild.presetId
+        InputKind.IMAGE to OutputMode.BOTH -> BuiltInPresets.imageTextAndRebuiltImage.presetId
+        InputKind.IMAGE to OutputMode.DERIVATIVE_IMAGE -> BuiltInPresets.imageDerivative.presetId
+        else -> error("Unsupported input and output selection")
     }
 
     private fun ManagedShareDescriptor.contentUri(): Uri = FileProvider.getUriForFile(
@@ -1251,6 +1439,8 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         reviewPlan = null
         approvedPlan = null
         imageClaimedMime = null
+        pendingIncomingText = null
+        pendingIncomingImage = null
     }
 
     private fun clearTransientSession() {
@@ -1264,6 +1454,8 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         reviewPlan = null
         approvedPlan = null
         imageClaimedMime = null
+        pendingIncomingText = null
+        pendingIncomingImage = null
     }
 
     private fun clearTransientPreview() {

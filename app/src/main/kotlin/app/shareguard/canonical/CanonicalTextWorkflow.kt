@@ -331,6 +331,7 @@ class CanonicalTextWorkflow(
         assuranceConsequenceApproved: Boolean,
         inputKind: InputKind = InputKind.TEXT,
         outputMode: OutputMode = OutputMode.TEXT,
+        presetId: String? = null,
     ): TextWorkflowCompletion {
         require(semanticDiffApproved) { "SEMANTIC_DIFF_NOT_APPROVED" }
         require(assuranceConsequenceApproved) { "ASSURANCE_CONSEQUENCE_NOT_APPROVED" }
@@ -487,7 +488,10 @@ class CanonicalTextWorkflow(
             textArtifact = artifact,
             imageArtifact = imageArtifact,
         )
-        val preset = preset(inputKind, outputMode)
+        val preset = presetId?.let(BuiltInPresets::require) ?: preset(inputKind, outputMode)
+        require(preset.inputKind == inputKind && preset.outputMode == outputMode) {
+            "PRESET_INPUT_OUTPUT_MISMATCH"
+        }
         val manifestReferences = preset.blockReferences.takeWhile { it.blockId.value != "PST-002" }
         val manifest = manifestReferences.mapIndexed { index, reference ->
             ExecutedBlockManifestEntry(

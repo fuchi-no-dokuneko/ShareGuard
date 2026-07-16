@@ -9,6 +9,17 @@ The app does **not** promise anonymity, removal of every unknown watermark, phys
 continued integrity after another app receives or edits an exported copy. Its assurance applies only to
 the exact Managed Artifact controlled by Canonical Share.
 
+## Delivery status
+
+The first functional POC is available from `main`: text and image intake, bundled local OCR, explicit
+review, canonical text/rebuilt-image/derivative outputs, exact-output verification, encrypted Saved
+Results, managed sharing, external-copy export and logical deletion are integrated. A debug APK is built
+by the `Android CI` workflow for evaluation.
+
+`main` must not be described as a production release until its API 23/API 36 managed-emulator jobs,
+isolated process-death/reboot job and release workflow are green for the same commit. The `v1.0.0` tag is
+reserved for that verified release boundary; unsigned artifacts are always labelled `unsigned`.
+
 ## Privacy boundary
 
 - All OCR, barcode, Unicode, URL, image and verification processing is local.
@@ -33,7 +44,7 @@ Requirements:
 - no service account, network API key or downloaded runtime model
 
 ```bash
-./gradlew test lintDebug :app:assembleDebug :app:cyclonedxDirectBom
+./gradlew test standaloneLint lintDebug :app:assembleDebug :app:cyclonedxDirectBom
 ```
 
 Useful focused checks:

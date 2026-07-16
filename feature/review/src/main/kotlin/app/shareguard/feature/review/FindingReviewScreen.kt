@@ -18,6 +18,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -75,6 +79,7 @@ private fun FindingCard(
     item: ReviewItemUiModel,
     onChooseAction: (String, DecisionAction) -> Unit,
 ) {
+    var expertExpanded by rememberSaveable(item.id) { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -84,12 +89,25 @@ private fun FindingCard(
             Text("Detected · ${item.category.name.lowercase().replace('_', ' ')} · ${item.severity.name.lowercase()}")
             Text("Confidence: ${item.confidence.name.lowercase().replace('_', ' ')}")
             Text("Location: ${item.locationDescription}")
+            if (item.explanation.isNotBlank()) Text(item.explanation)
             if (item.before != null || item.after != null) {
                 Column {
                     Text("Before", style = MaterialTheme.typography.labelLarge)
                     Text(item.before ?: "Nothing")
                     Text("After", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Text(item.after ?: "Nothing")
+                }
+            }
+            if (item.expertDetails.isNotEmpty() || item.evidenceSummary.isNotBlank()) {
+                OutlinedButton(
+                    onClick = { expertExpanded = !expertExpanded },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (expertExpanded) "Hide expert details" else "Show expert details") }
+                if (expertExpanded) {
+                    item.expertDetails.forEach { (label, value) ->
+                        Text("$label: $value")
+                    }
+                    if (item.evidenceSummary.isNotBlank()) Text("Evidence: ${item.evidenceSummary}")
                 }
             }
             item.allowedActions.forEach { action ->

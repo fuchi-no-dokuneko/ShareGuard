@@ -46,6 +46,8 @@ data class SavedResultsUiState(
     val showPreviews: Boolean,
     val items: List<SavedResultCardUiModel>,
     val selectedIds: Set<String> = emptySet(),
+    val loading: Boolean = false,
+    val storageErrorCode: String? = null,
 ) {
     init { require(selectedIds.all { id -> items.any { it.id == id } }) }
 }

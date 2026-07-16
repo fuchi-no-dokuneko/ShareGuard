@@ -66,9 +66,8 @@ class MainActivity : ComponentActivity() {
 
     private fun consumeIntent(source: Intent) {
         viewModel.consumeIncomingIntent(source)
-        if (source.action == Intent.ACTION_SEND) {
-            source.removeExtra(Intent.EXTRA_TEXT)
-            source.removeExtra(Intent.EXTRA_STREAM)
+        if (source.action == Intent.ACTION_SEND || source.action == Intent.ACTION_SEND_MULTIPLE) {
+            source.replaceExtras(Bundle())
             source.clipData = null
             source.action = Intent.ACTION_MAIN
             source.type = null
@@ -109,6 +108,7 @@ class MainActivity : ComponentActivity() {
             while (true) {
                 val current = viewModel.state.value
                 when (current.route) {
+                    AppRoute.WORKFLOW -> viewModel.runWorkflow()
                     AppRoute.FINDING_REVIEW -> {
                         current.reviewItems.forEach { item ->
                             item.allowedActions.firstOrNull()?.let { action ->
@@ -124,5 +124,27 @@ class MainActivity : ComponentActivity() {
                 delay(25L)
             }
         }
+    }
+
+    internal fun openWorkflowForTest(text: String) {
+        viewModel.openTextEntry(text)
+        viewModel.submitText()
+    }
+
+    internal fun openTextEntryForTest(text: String) {
+        viewModel.openTextEntry(text)
+    }
+
+    internal fun openWorkflowBlockForTest(blockId: String) {
+        viewModel.openWorkflowBlock(blockId)
+    }
+
+    internal fun closeWorkflowBlockForTest() {
+        viewModel.closeWorkflowBlock()
+    }
+
+    internal fun openOutputAndPresetChoiceForTest() {
+        viewModel.openOutputChoice()
+        viewModel.openPresetChoice()
     }
 }

@@ -11,16 +11,22 @@ import app.shareguard.feature.saved.SavedResultDetailUiState
 import app.shareguard.feature.saved.SavedFilter
 import app.shareguard.feature.saved.SavedLayout
 import app.shareguard.feature.saved.SavedSort
+import app.shareguard.feature.workflow.BlockDetailTab
 
 enum class AppRoute {
     HOME,
+    SOURCE_CHOICE,
     TEXT_INPUT,
     IMAGE_PREVIEW,
     OUTPUT_CHOICE,
+    PRESET_CHOICE,
+    WORKFLOW,
+    BLOCK_DETAIL,
     FINDING_REVIEW,
     SEMANTIC_DIFF,
     PROCESSING,
     RESULT,
+    VERIFICATION_REPORT,
     SAVED_RESULTS,
     SAVED_DETAIL,
     SAVED_SETTINGS,
@@ -49,6 +55,7 @@ data class ResultUiState(
     val statusLines: List<String>,
     val limitationLines: List<String>,
     val blockingChecks: List<String>,
+    val verificationReportRows: List<Pair<String, String>>,
 )
 
 data class ShareGuardUiState(
@@ -58,6 +65,9 @@ data class ShareGuardUiState(
     val elapsedSinceImport: String? = null,
     val revealCharacters: Boolean = false,
     val selectedOutput: OutputMode = OutputMode.TEXT,
+    val selectedPresetId: String = "PRESET-TT-BALANCED",
+    val selectedWorkflowBlockId: String? = null,
+    val selectedBlockDetailTab: BlockDetailTab = BlockDetailTab.PURPOSE,
     val imageSummary: AcceptedImageSummary? = null,
     val imageOcrWarning: String? = null,
     val transientImagePreview: android.graphics.Bitmap? = null,
@@ -69,6 +79,8 @@ data class ShareGuardUiState(
     val result: ResultUiState? = null,
     val exactResultImagePreview: android.graphics.Bitmap? = null,
     val savedItems: List<SavedResultCardUiModel> = emptyList(),
+    val savedResultsLoading: Boolean = false,
+    val savedResultsErrorCode: String? = null,
     val savedQuery: String = "",
     val savedSort: SavedSort = SavedSort.NEWEST,
     val savedFilter: SavedFilter = SavedFilter.ALL,

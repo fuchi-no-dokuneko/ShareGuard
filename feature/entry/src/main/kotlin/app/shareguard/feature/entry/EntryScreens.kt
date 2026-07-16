@@ -228,6 +228,7 @@ fun OutputChoiceScreen(
 @Composable
 fun PresetChoiceScreen(
     selectedId: String,
+    choices: List<PresetChoice>,
     onSelect: (String) -> Unit,
     onContinue: () -> Unit,
     onBack: () -> Unit,
@@ -239,7 +240,7 @@ fun PresetChoiceScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Text("Choose a versioned workflow", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() }) }
-            items(presetChoices, key = { it.id }) { preset ->
+            items(choices, key = { it.id }) { preset ->
                 Card(
                     onClick = { onSelect(preset.id) },
                     border = if (preset.id == selectedId) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,

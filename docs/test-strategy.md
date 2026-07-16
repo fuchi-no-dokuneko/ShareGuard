@@ -91,6 +91,7 @@ commit:
 | Evidence family | Executable implementation | Managed lane |
 | --- | --- | --- |
 | App/activity restoration | `IntentLifecycleInstrumentedTest` | API 23 and API 36 connected tests |
+| Primary workflow and hostile Intent routing | `IntentLifecycleInstrumentedTest` | API 23 and API 36; versioned preset, sequential workflow and block-contract routes are reachable, combined text/image shares require an explicit source choice, and consumed extras are removed from the activity Intent |
 | True process loss at persistence checkpoint | `ProcessDeathPersistenceInstrumentedTest` | API 36 isolated destructive lane; the seed process is killed immediately after durable metadata commit and a fresh instrumentation process verifies quarantine and transient purge |
 | True emulator reboot | `DestructiveDeviceLifecycleInstrumentedTest` | API 36 isolated destructive lane; one APK installation seeds a committed result, the runner proves Linux boot-ID change, and the post-boot phase verifies result/timer restoration |
 | Cross-package URI boundary | `CrossAppSharingInstrumentedTest` plus the test-APK `TestShareReceiverActivity` | API 23 and API 36; receiver package/UID differs from the application, explicit read grant succeeds, no-grant access and write-open fail, and paths outside the managed-share root are rejected |

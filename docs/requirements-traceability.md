@@ -15,7 +15,7 @@ complete only when its implementation, focused tests and applicable Android inte
 | REV/VER final layers and assurance report | `block/verify` | failing verifier, exact-byte reopen, source-reference, lineage, OCR/barcode and report tests |
 | Provider snapshot, Import Anchor, timer and transient cleanup | `core/session`, `core/security`, `ShareGuardViewModel` | fake-clock model tests, process-abandonment purge, new-activity restoration, and the two-phase managed-emulator reboot probe |
 | PST-001..007, encrypted durable storage and logical deletion | `core/storage` | Room migration, every repository interruption checkpoint, process-kill at metadata commit, reopen/digest, Android Keystore loss, corruption, orphan, ENOSPC and bulk-deletion tests |
-| UX-SCR-001..023 and settings | `feature/*`, `core/ui`, `app` | state/reducer, Compose semantics, large-text/landscape and API 23/36 instrumentation tests |
+| UX-SCR-001..023 and settings | `feature/*`, `core/ui`, `app` | primary preset/workflow/block-detail routing, source-choice gate, expert character disclosure, exact verification report, Saved Results states, Compose semantics, large-text/landscape and API 23/36 instrumentation tests |
 | Default offline/backup/log/trace posture | manifest, CI scripts, threat/dependency records | merged-manifest/APK checks, backup checks, lint, CodeQL, dependency review and canaries |
 | Android sharing boundary | `feature/output`, production `FileProvider`, test-APK receiver | Intent-field unit tests, system chooser monitor, distinct-package exact-byte read, no-grant denial, write denial, and path-scope rejection |
 | Public release | `.github/workflows`, `scripts/ci` | green tag run, public visibility, tag commit, APK/AAB/CycloneDX SBOM/checksum asset verification |

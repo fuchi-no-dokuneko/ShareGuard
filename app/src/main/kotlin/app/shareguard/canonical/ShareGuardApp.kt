@@ -35,6 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.shareguard.core.model.OutputMode
+import app.shareguard.core.model.ArtifactKind
+import app.shareguard.core.model.BlockExecutionStatus
+import app.shareguard.core.model.BlockId
+import app.shareguard.core.pipeline.BuiltInPresets
+import app.shareguard.core.pipeline.NormativeBlockCatalog
 import app.shareguard.core.ui.ClaimLanguage
 import app.shareguard.core.ui.LimitationCard
 import app.shareguard.core.ui.PersistentStatusHeader
@@ -43,13 +48,21 @@ import app.shareguard.core.ui.ShareGuardTheme
 import app.shareguard.feature.entry.EntryScreen
 import app.shareguard.feature.entry.ImageInputPreviewScreen
 import app.shareguard.feature.entry.OutputChoiceScreen
+import app.shareguard.feature.entry.PresetChoiceScreen
 import app.shareguard.feature.entry.TextInputScreen
+import app.shareguard.feature.entry.presetChoices
 import app.shareguard.feature.review.FindingReviewScreen
 import app.shareguard.feature.saved.SavedResultDetailScreen
 import app.shareguard.feature.saved.DeleteSavedResultScreen
 import app.shareguard.feature.saved.SavedResultsScreen
 import app.shareguard.feature.saved.SavedSettingsScreen
 import app.shareguard.feature.saved.SavedSettingsUiState
+import app.shareguard.feature.workflow.BlockDetailScreen
+import app.shareguard.feature.workflow.BlockDetailTab
+import app.shareguard.feature.workflow.BlockDetailUiState
+import app.shareguard.feature.workflow.WorkflowBlockUiModel
+import app.shareguard.feature.workflow.WorkflowScreen
+import app.shareguard.feature.workflow.WorkflowUiState
 
 @Composable
 fun ShareGuardApp(viewModel: ShareGuardViewModel) {
@@ -62,9 +75,12 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
                 val representationStage = when (state.route) {
-                    AppRoute.TEXT_INPUT, AppRoute.IMAGE_PREVIEW, AppRoute.OUTPUT_CHOICE -> RepresentationStage.SOURCE
+                    AppRoute.SOURCE_CHOICE, AppRoute.TEXT_INPUT, AppRoute.IMAGE_PREVIEW, AppRoute.OUTPUT_CHOICE,
+                    AppRoute.PRESET_CHOICE, AppRoute.WORKFLOW, AppRoute.BLOCK_DETAIL,
+                    -> RepresentationStage.SOURCE
                     AppRoute.FINDING_REVIEW, AppRoute.SEMANTIC_DIFF, AppRoute.PROCESSING -> RepresentationStage.CANONICAL
-                    AppRoute.RESULT -> RepresentationStage.OUTPUT
+                    AppRoute.RESULT, AppRoute.VERIFICATION_REPORT -> RepresentationStage.OUTPUT
+                    AppRoute.ERROR -> RepresentationStage.SOURCE
                     else -> null
                 }
                 if (representationStage != null) {
@@ -86,6 +102,11 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                     },
                     onOpenSavedResults = viewModel::openSavedResults,
                     onOpenThreatModel = viewModel::openAbout,
+                )
+                AppRoute.SOURCE_CHOICE -> SourceChoiceScreen(
+                    onChooseText = viewModel::chooseIncomingText,
+                    onChooseImage = viewModel::chooseIncomingImage,
+                    onDiscard = viewModel::goHome,
                 )
                 AppRoute.TEXT_INPUT -> TextInputScreen(
                     text = state.text,
@@ -114,8 +135,32 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                         setOf(OutputMode.TEXT, OutputMode.REBUILT_IMAGE, OutputMode.BOTH)
                     },
                     onSelect = viewModel::chooseOutput,
-                    onContinue = viewModel::finishOutputChoice,
+                    onContinue = viewModel::openPresetChoice,
                     onBack = viewModel::finishOutputChoice,
+                )
+                AppRoute.PRESET_CHOICE -> PresetChoiceScreen(
+                    selectedId = state.selectedPresetId,
+                    choices = presetChoices.filter { choice ->
+                        BuiltInPresets.require(choice.id).let { preset ->
+                            preset.inputKind == state.inputKind && preset.outputMode == state.selectedOutput
+                        }
+                    },
+                    onSelect = viewModel::choosePreset,
+                    onContinue = viewModel::finishPresetChoice,
+                    onBack = viewModel::backToOutputChoice,
+                )
+                AppRoute.WORKFLOW -> WorkflowScreen(
+                    state = state.toWorkflowUiState(),
+                    onRun = viewModel::runWorkflow,
+                    onCancel = viewModel::goHome,
+                    onReview = {},
+                    onOpenBlock = viewModel::openWorkflowBlock,
+                    onChooseLowerCostPreset = viewModel::openOutputChoice,
+                )
+                AppRoute.BLOCK_DETAIL -> BlockDetailScreen(
+                    state = state.toBlockDetailUiState(),
+                    onSelectTab = viewModel::selectBlockDetailTab,
+                    onBack = viewModel::closeWorkflowBlock,
                 )
                 AppRoute.FINDING_REVIEW -> FindingReviewScreen(
                     items = state.reviewItems,
@@ -137,8 +182,16 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                     state = requireNotNull(state.result),
                     exactImagePreview = state.exactResultImagePreview?.takeUnless { it.isRecycled }?.asImageBitmap(),
                     onShare = viewModel::shareCurrentResult,
+                    onExport = { kind ->
+                        state.result?.savedResultId?.let { id -> viewModel.requestExternalExport(id, kind) }
+                    },
                     onSavedResults = viewModel::openSavedResults,
+                    onReport = viewModel::openVerificationReport,
                     onDone = viewModel::goHome,
+                )
+                AppRoute.VERIFICATION_REPORT -> VerificationReportScreen(
+                    state = requireNotNull(state.result),
+                    onBack = viewModel::closeVerificationReport,
                 )
                 AppRoute.SAVED_RESULTS -> SavedResultsScreen(
                     state = app.shareguard.feature.saved.SavedResultsUiState(
@@ -150,6 +203,8 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                         showPreviews = state.showSavedPreviews,
                         items = state.savedItems,
                         selectedIds = state.selectedSavedIds,
+                        loading = state.savedResultsLoading,
+                        storageErrorCode = state.savedResultsErrorCode,
                     ),
                     sortMenuExpanded = state.sortMenuExpanded,
                     filterMenuExpanded = state.filterMenuExpanded,
@@ -176,6 +231,9 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                         onShare = { viewModel.shareSavedResult(detail.item.id) },
                         onRevalidate = { viewModel.revalidateSavedResult(detail.item.id) },
                         onExport = { kind -> viewModel.requestExternalExport(detail.item.id, kind) },
+                        onEditAsNew = state.savedDetail?.canonicalTextPreview?.let {
+                            { viewModel.editSavedResultAsNew() }
+                        },
                         onRename = { viewModel.openRenameSavedResult(detail.item.id) },
                         onToggleFavourite = { viewModel.toggleSavedFavourite(detail.item.id) },
                         onDelete = { viewModel.requestDeleteSavedResult(detail.item.id) },
@@ -237,7 +295,12 @@ fun ShareGuardApp(viewModel: ShareGuardViewModel) {
                     onShareJitterChange = viewModel::toggleShareJitter,
                     onBack = viewModel::goHome,
                 )
-                        AppRoute.ERROR -> ErrorScreen(state.errorCode ?: "LOCAL_PROCESSING_FAILED", viewModel::goHome)
+                        AppRoute.ERROR -> ErrorScreen(
+                            code = state.errorCode ?: "LOCAL_PROCESSING_FAILED",
+                            editableTextAvailable = state.text.isNotEmpty(),
+                            onRecoverAsText = viewModel::recoverAsEditableText,
+                            onDiscard = viewModel::goHome,
+                        )
                     }
                 }
             }
@@ -340,6 +403,33 @@ private fun SemanticDiffScreen(
 }
 
 @Composable
+private fun SourceChoiceScreen(
+    onChooseText: () -> Unit,
+    onChooseImage: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
+        Column(
+            modifier = Modifier.padding(padding).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Choose one source",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() },
+            )
+            LimitationCard(
+                "Malformed combined share",
+                "The sending app supplied both text and an image. Canonical Share processes exactly one source and will not choose silently.",
+            )
+            Button(onClick = onChooseText, modifier = Modifier.fillMaxWidth()) { Text("Use shared text") }
+            Button(onClick = onChooseImage, modifier = Modifier.fillMaxWidth()) { Text("Use shared image") }
+            OutlinedButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth()) { Text("Discard both") }
+        }
+    }
+}
+
+@Composable
 private fun ProcessingScreen() {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -355,7 +445,9 @@ private fun ResultScreen(
     state: ResultUiState,
     exactImagePreview: androidx.compose.ui.graphics.ImageBitmap?,
     onShare: () -> Unit,
+    onExport: (ArtifactKind) -> Unit,
     onSavedResults: () -> Unit,
+    onReport: () -> Unit,
     onDone: () -> Unit,
 ) {
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
@@ -386,12 +478,67 @@ private fun ResultScreen(
             if (state.blockingChecks.isNotEmpty()) {
                 item { LimitationCard("Blocking checks", state.blockingChecks.joinToString()) }
             }
+            item { OutlinedButton(onClick = onReport, modifier = Modifier.fillMaxWidth()) { Text("Verification report") } }
             if (state.savedResultId != null) {
                 item { Button(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("Share verified result") } }
+                if (state.outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {
+                    item {
+                        OutlinedButton(
+                            onClick = { onExport(ArtifactKind.CANONICAL_TEXT) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Export canonical text copy") }
+                    }
+                }
+                if (state.outputMode in setOf(OutputMode.REBUILT_IMAGE, OutputMode.BOTH)) {
+                    item {
+                        OutlinedButton(
+                            onClick = { onExport(ArtifactKind.REBUILT_IMAGE) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Export rebuilt image copy") }
+                    }
+                }
+                if (state.outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                    item {
+                        OutlinedButton(
+                            onClick = { onExport(ArtifactKind.DERIVATIVE_IMAGE) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Export derivative image copy") }
+                    }
+                }
                 item { OutlinedButton(onClick = onSavedResults, modifier = Modifier.fillMaxWidth()) { Text("Saved Results") } }
             }
             item { OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") } }
             item { LimitationCard("Managed artifact boundary", ClaimLanguage.MANAGED_BOUNDARY) }
+        }
+    }
+}
+
+@Composable
+private fun VerificationReportScreen(
+    state: ResultUiState,
+    onBack: () -> Unit,
+) {
+    Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Text(
+                    "Verification report",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+            items(state.verificationReportRows) { (label, value) ->
+                Column {
+                    Text(label, fontWeight = FontWeight.SemiBold)
+                    Text(value)
+                }
+            }
+            items(state.limitationLines) { LimitationCard("Declared limitation", it) }
+            item { LimitationCard("Managed artifact boundary", ClaimLanguage.MANAGED_BOUNDARY) }
+            item { OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to result") } }
         }
     }
 }
@@ -433,15 +580,26 @@ private fun AboutScreen(
 }
 
 @Composable
-private fun ErrorScreen(code: String, onDone: () -> Unit) {
+private fun ErrorScreen(
+    code: String,
+    editableTextAvailable: Boolean,
+    onRecoverAsText: () -> Unit,
+    onDiscard: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Text("Processing stopped", style = MaterialTheme.typography.headlineSmall)
         Text(code)
-        Text("Source material was not made shareable. You can edit the input and try again.")
-        OutlinedButton(onClick = onDone, modifier = Modifier.padding(top = 16.dp)) { Text("Return home") }
+        Text("Source material was not made shareable. Mandatory verification was not weakened.")
+        if (editableTextAvailable) {
+            Text("A safe alternative is to treat the current editable wording as a new text-only source and review it again.")
+            Button(onClick = onRecoverAsText, modifier = Modifier.padding(top = 16.dp)) {
+                Text("Recover as editable text")
+            }
+        }
+        OutlinedButton(onClick = onDiscard, modifier = Modifier.padding(top = 16.dp)) { Text("Discard session") }
     }
 }
 
@@ -542,6 +700,76 @@ private fun WaitingTargetScreen(
             }
         }
     }
+}
+
+private fun ShareGuardUiState.toWorkflowUiState(): WorkflowUiState {
+    val preset = BuiltInPresets.require(selectedPresetId)
+    return WorkflowUiState(
+        presetName = preset.presetId,
+        schemaVersion = preset.schemaVersion.value,
+        inputLabel = preset.inputKind.name.lowercase(),
+        outputLabel = preset.outputMode.name.lowercase().replace('_', ' '),
+        blocks = preset.blockReferences.mapIndexed { index, reference ->
+            val metadata = NormativeBlockCatalog.registry.require(reference)
+            WorkflowBlockUiModel(
+                blockId = reference.blockId.value,
+                name = metadata.displayName,
+                status = if (index == 0) BlockExecutionStatus.READY else BlockExecutionStatus.WAITING,
+                findingCount = 0,
+                changeCount = 0,
+                warningCount = 0,
+                mandatory = metadata.mandatory,
+                inputType = metadata.acceptedInputKinds.joinToString { it.name.lowercase() },
+                outputType = metadata.supportedOutputModes.joinToString { it.name.lowercase().replace('_', ' ') },
+            )
+        },
+        running = false,
+        waitingForReview = false,
+    )
+}
+
+private fun ShareGuardUiState.toBlockDetailUiState(): BlockDetailUiState {
+    val blockId = requireNotNull(selectedWorkflowBlockId)
+    val metadata = NormativeBlockCatalog.registry.require(BlockId(blockId))
+    val rows = when (selectedBlockDetailTab) {
+        BlockDetailTab.PURPOSE -> listOf(
+            "Purpose" to metadata.description,
+            "Pipeline stage" to metadata.stage.name.lowercase().replace('_', ' '),
+            "Threat coverage" to metadata.threatCoverage.joinToString(),
+        )
+        BlockDetailTab.FINDINGS -> listOf(
+            "Current state" to "Not run",
+            "Review behavior" to if (metadata.requiresReview) "May stop for explicit review" else "No block-specific review gate",
+        )
+        BlockDetailTab.CHANGES -> listOf(
+            "Content transforming" to if (metadata.contentTransforming) "Yes — every applied change is ledgered" else "No",
+            "Transformation category" to (metadata.transformationCategory?.name?.lowercase()?.replace('_', ' ') ?: "None"),
+        )
+        BlockDetailTab.SETTINGS -> listOf(
+            "Settings schema" to metadata.settingsSchemaVersion.value.toString(),
+            "Mandatory" to if (metadata.mandatory) "Yes — pinned" else "No",
+            "Conditional" to if (metadata.conditional) "Yes" else "No",
+        )
+        BlockDetailTab.VERIFICATION -> listOf(
+            "Independent checks" to metadata.verificationRequirements.joinToString { it.name.lowercase().replace('_', ' ') }
+                .ifEmpty { "Covered by final structural and revision verification" },
+            "Invalidated by" to metadata.invalidationKeys.joinToString { it.name.lowercase().replace('_', ' ') },
+        )
+        BlockDetailTab.TECHNICAL -> listOf(
+            "Block version" to metadata.blockVersion.value.toString(),
+            "Resource class" to metadata.resourceClass.name.lowercase().replace('_', ' '),
+            "Offline capability" to metadata.offlineCapability.name.lowercase().replace('_', ' '),
+            "Deterministic" to if (metadata.deterministic) "Yes" else "No",
+            "Persistent content logging" to if (metadata.persistentLoggingAllowed) "Allowed" else "Disabled",
+        )
+    }
+    return BlockDetailUiState(
+        blockId = blockId,
+        name = metadata.displayName,
+        selectedTab = selectedBlockDetailTab,
+        rows = rows,
+        limitation = "This pre-run view shows the versioned contract. Findings, changes and evidence appear only after execution.",
+    )
 }
 
 private fun formatStorage(items: List<app.shareguard.feature.saved.SavedResultCardUiModel>): String =

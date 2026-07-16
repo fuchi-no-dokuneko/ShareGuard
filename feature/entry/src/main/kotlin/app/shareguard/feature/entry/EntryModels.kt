@@ -77,9 +77,11 @@ data class PresetChoice(
 
 val presetChoices: List<PresetChoice> = listOf(
     PresetChoice("PRESET-TT-BALANCED", "Balanced", "Text", 4, false, "Known tracking removed", "Canonical text"),
-    PresetChoice("PRESET-TT-STRICT", "Strict text", "Text", 5, false, "Reviewed", "Canonical text"),
     PresetChoice("PRESET-TT-STRICT-URL", "Strict URL", "Text or image OCR", 5, false, "Query, fragment, path and subdomain reviewed", "Canonical text"),
+    PresetChoice("PRESET-TI-REBUILT", "Text reconstruction", "Text", 5, false, "Reviewed and re-scanned", "Rebuilt image"),
+    PresetChoice("PRESET-TB-BOTH", "Text plus reconstruction", "Text", 5, false, "Reviewed and re-scanned", "Text and rebuilt image"),
+    PresetChoice("PRESET-IT-CANONICAL", "Image to canonical text", "Image", 7, false, "OCR URLs reviewed and re-scanned", "Canonical text"),
     PresetChoice("PRESET-II-FULL-REBUILD", "Full reconstruction", "Image", 7, false, "Reviewed and re-scanned", "Rebuilt image"),
-    PresetChoice("PRESET-II-PRESERVE-LAYOUT", "Preserve layout", "Image", 7, true, "Reviewed and re-scanned", "Rebuilt image"),
+    PresetChoice("PRESET-IB-BOTH", "Image text plus reconstruction", "Image", 7, false, "Reviewed and re-scanned", "Text and rebuilt image"),
     PresetChoice("PRESET-II-DERIVATIVE", "Experimental derivative", "Image", 2, true, "Not rewritten unless selected", "Derivative image"),
 )
