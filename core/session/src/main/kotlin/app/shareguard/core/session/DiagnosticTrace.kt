@@ -37,6 +37,8 @@ enum class SessionDiagnosticReason {
     CLEANUP_PARTIAL,
     FATAL_FAILURE,
     STALE_SESSION_PURGED,
+    BLOCK_PHASE_COMPLETE,
+    TRANSFORMATION_APPLIED,
 }
 
 /** Production default: no persistent trace and no content-linked timestamps. */
@@ -59,7 +61,7 @@ object DisabledSessionDiagnosticTrace : SessionDiagnosticTrace {
 /** Bounded, debug-only, in-memory and session-local diagnostic trace. */
 class InMemorySessionDiagnosticTrace(
     private val sessionId: SessionId,
-    private val capacity: Int = 256,
+    private val capacity: Int = 2_048,
 ) : SessionDiagnosticTrace {
     private val events = ArrayDeque<DiagnosticTraceEvent>(capacity)
     private var nextEventId = 1L

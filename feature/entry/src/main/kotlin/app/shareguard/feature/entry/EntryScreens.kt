@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -26,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +130,8 @@ fun TextInputScreen(
 @Composable
 fun ImageInputPreviewScreen(
     summary: AcceptedImageSummary,
+    reviewWarning: String,
+    transientPreview: ImageBitmap?,
     selectedOutput: OutputMode,
     onChooseOutput: () -> Unit,
     onContinue: () -> Unit,
@@ -141,6 +145,16 @@ fun ImageInputPreviewScreen(
         ) {
             item { Text("Image source", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() }) }
             item { LimitationCard("Source is untrusted", "The format and dimensions below were detected from the private snapshot, not accepted from its filename or MIME claim.") }
+            item { LimitationCard("Local OCR review required", reviewWarning) }
+            if (transientPreview != null) {
+                item {
+                    Image(
+                        bitmap = transientPreview,
+                        contentDescription = "Selected source image preview for OCR comparison",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             item {
                 SummaryRow("Detected format", summary.detectedFormat)
                 SummaryRow("Pixel dimensions", "${summary.pixelWidth} × ${summary.pixelHeight}")
@@ -170,6 +184,7 @@ fun OutputChoiceScreen(
     onContinue: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    allowedModes: Set<OutputMode> = OutputMode.entries.toSet(),
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -177,7 +192,7 @@ fun OutputChoiceScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Text("Choose output", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() }) }
-            items(outputChoices, key = { it.mode }) { choice ->
+            items(outputChoices.filter { it.mode in allowedModes }, key = { it.mode }) { choice ->
                 Card(
                     onClick = { onSelect(choice.mode) },
                     border = if (selected == choice.mode) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,

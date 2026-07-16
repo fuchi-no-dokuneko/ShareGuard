@@ -4,7 +4,6 @@ import app.shareguard.core.model.MigrationState
 import app.shareguard.core.model.SavedResultId
 import app.shareguard.core.model.SavedResultLifecycleState
 import java.io.File
-import java.nio.file.Files
 
 data class MigrationPreparation(
     val readyForRevalidation: Boolean,
@@ -43,7 +42,7 @@ class PersistentStoreIntegritySweep(
     private val managedShareCache: ManagedShareCache? = null,
     private val migrationHook: SavedResultMigrationHook = MetadataOnlyMigrationHook,
 ) {
-    suspend fun run(): IntegritySweepReport {
+    suspend fun run(clearUntrackedShareCache: Boolean = true): IntegritySweepReport {
         var revalidated = 0
         var quarantined = 0
         var deleted = 0
@@ -53,7 +52,13 @@ class PersistentStoreIntegritySweep(
         var unresolved = 0
         val reasons = linkedSetOf<String>()
 
-        if (managedShareCache?.clearAllOnStartup() == false) {
+        val shareCleanupComplete = managedShareCache?.let { cache ->
+            if (clearUntrackedShareCache) cache.clearAllOnStartup() else {
+                cache.cleanupExpired()
+                true
+            }
+        }
+        if (shareCleanupComplete == false) {
             unresolved += 1
             reasons += "SHARE_CACHE_CLEANUP_INCOMPLETE"
         }
@@ -140,7 +145,7 @@ class PersistentStoreIntegritySweep(
             val directory = repository.layout.resultDirectory(id)
             inventoryLeaves(directory).forEach { leaf ->
                 val canonical = runCatching { leaf.canonicalFile }.getOrNull()
-                if (canonical == null || !canonical.toPath().startsWith(directory.canonicalFile.toPath())) {
+                if (canonical == null || !canonical.isStrictlyInside(directory)) {
                     unresolved += 1
                     reasons += "UNAPPROVED_REFERENCE_UNRESOLVED"
                 } else if (canonical !in expected && leaf.exists()) {
@@ -172,7 +177,7 @@ class PersistentStoreIntegritySweep(
         if (!directory.exists()) return emptyList()
         val output = mutableListOf<File>()
         fun visit(file: File) {
-            if (Files.isSymbolicLink(file.toPath()) || !file.isDirectory) {
+            if (file.isSymbolicLinkCompat() || !file.isDirectory) {
                 output += file
                 return
             }

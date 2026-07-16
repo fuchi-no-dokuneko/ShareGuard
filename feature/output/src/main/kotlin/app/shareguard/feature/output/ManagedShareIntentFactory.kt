@@ -26,6 +26,15 @@ object ManagedShareIntentFactory {
         }
     }
 
+    fun textAndImage(text: String, readOnlyContentUri: Uri, imageMimeType: String): Intent {
+        require(text.isNotEmpty()) { "Verified canonical text cannot be empty" }
+        require(readOnlyContentUri.scheme == "content") { "Managed image share requires a content URI" }
+        require(imageMimeType.startsWith("image/")) { "Managed image share requires an image MIME type" }
+        return image(readOnlyContentUri, imageMimeType).apply {
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+    }
+
     fun chooser(sendIntent: Intent): Intent = Intent.createChooser(sendIntent, "Share verified result")
 }
 

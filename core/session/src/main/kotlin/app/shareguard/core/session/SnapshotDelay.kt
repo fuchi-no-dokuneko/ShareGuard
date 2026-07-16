@@ -31,6 +31,25 @@ object CoroutineDelaySleeper : DelaySleeper {
     }
 }
 
+/** General optional jitter. The selected duration is ephemeral and cancellation follows coroutine cancellation. */
+class PolicyBoundedRandomDelay(
+    private val selector: BoundedDurationSelector = RandomBoundedDurationSelector(),
+    private val sleeper: DelaySleeper = CoroutineDelaySleeper,
+    private val maximumSupportedDelay: DurationMillis = DurationMillis(60_000),
+) {
+    suspend fun await(policy: BoundedDelayPolicy) {
+        if (!policy.enabled) return
+        require(policy.maximum.value <= maximumSupportedDelay.value) {
+            "Bounded delay exceeds the local resource budget"
+        }
+        val selected = selector.select(policy.minimum.value, policy.maximum.value)
+        require(selected in policy.minimum.value..policy.maximum.value) {
+            "Delay selector returned an out-of-bounds duration"
+        }
+        sleeper.sleep(DurationMillis(selected))
+    }
+}
+
 fun interface SnapshotRecheckDelay {
     suspend fun await(policy: BoundedDelayPolicy, cancellationSignal: CancellationSignal)
 }

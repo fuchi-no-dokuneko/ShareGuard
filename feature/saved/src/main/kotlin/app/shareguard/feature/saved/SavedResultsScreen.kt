@@ -47,6 +47,7 @@ fun SavedResultsScreen(
     onToggleFilterMenu: () -> Unit,
     onChooseFilter: (SavedFilter) -> Unit,
     onToggleLayout: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpen: (String) -> Unit,
     onShare: (String) -> Unit,
     onOverflow: (String) -> Unit,
@@ -95,6 +96,7 @@ fun SavedResultsScreen(
                 OutlinedButton(onClick = onToggleLayout) {
                     Text("Layout: ${state.layout.name.lowercase()}")
                 }
+                OutlinedButton(onClick = onOpenSettings) { Text("Settings") }
             }
             Text("Local storage used: ${state.storageUsageLabel}")
             if (state.selectedIds.isNotEmpty()) {

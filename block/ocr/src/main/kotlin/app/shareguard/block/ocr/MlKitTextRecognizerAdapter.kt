@@ -2,6 +2,7 @@ package app.shareguard.block.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import androidx.core.graphics.createBitmap
 import app.shareguard.core.model.NormalizedRect
 import app.shareguard.core.model.SafeSummary
 import com.google.android.gms.tasks.Task
@@ -106,7 +107,7 @@ private fun Rect.normalized(width: Int, height: Int): NormalizedRect {
 }
 
 private fun app.shareguard.block.image.PixelImage.toBitmap(): Bitmap {
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val storage = IntArray(Math.multiplyExact(width, height))
     try {
         for (y in 0 until height) for (x in 0 until width) storage[y * width + x] = argbAt(x, y)

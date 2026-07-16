@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import androidx.core.graphics.createBitmap
 import app.shareguard.core.model.CanonicalRevision
 import app.shareguard.core.model.DependencyId
 import app.shareguard.core.model.DependencyOrigin
@@ -161,7 +162,7 @@ class DerivativeImageRenderer(
     }
 
     private fun allocate(width: Int, height: Int): Bitmap = try {
-        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { it.setHasAlpha(false) }
+        createBitmap(width, height, Bitmap.Config.ARGB_8888).also { it.setHasAlpha(false) }
     } catch (_: IllegalArgumentException) {
         throw RenderException(RenderFailureCode.CANVAS_ALLOCATION_FAILED)
     } catch (_: OutOfMemoryError) {

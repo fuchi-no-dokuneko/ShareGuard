@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":block:image"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.icu4j)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(project(":test-corpus"))

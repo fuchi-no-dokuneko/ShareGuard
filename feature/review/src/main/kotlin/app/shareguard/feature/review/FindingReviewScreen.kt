@@ -29,9 +29,8 @@ import app.shareguard.core.model.DecisionAction
 fun FindingReviewScreen(
     items: List<ReviewItemUiModel>,
     onChooseAction: (findingId: String, action: DecisionAction) -> Unit,
-    onOpenDetail: (findingId: String) -> Unit,
     onContinue: () -> Unit,
-    onCancel: () -> Unit,
+    onEditSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val unresolved = items.count { it.selectedAction == null }
@@ -42,7 +41,7 @@ fun FindingReviewScreen(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
-                OutlinedButton(onClick = onCancel) { Text("Cancel") }
+                OutlinedButton(onClick = onEditSource) { Text("Edit source") }
                 Spacer(Modifier.width(12.dp))
                 Button(onClick = onContinue, enabled = unresolved == 0) { Text("Apply reviewed decisions") }
             }
@@ -63,7 +62,7 @@ fun FindingReviewScreen(
                 if (groupItems.isNotEmpty()) {
                     item { Text(group.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
                     items(groupItems, key = { it.id }) { item ->
-                        FindingCard(item, onChooseAction, onOpenDetail)
+                        FindingCard(item, onChooseAction)
                     }
                 }
             }
@@ -75,7 +74,6 @@ fun FindingReviewScreen(
 private fun FindingCard(
     item: ReviewItemUiModel,
     onChooseAction: (String, DecisionAction) -> Unit,
-    onOpenDetail: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -101,7 +99,6 @@ private fun FindingCard(
                     border = if (item.selectedAction == action) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                 ) { Text(action.accessibleLabel()) }
             }
-            OutlinedButton(onClick = { onOpenDetail(item.id) }) { Text("View surrounding context") }
         }
     }
 }

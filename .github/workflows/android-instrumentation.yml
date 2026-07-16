@@ -1,6 +1,7 @@
 name: Android Instrumentation
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -105,7 +106,9 @@ jobs:
             -camera-back none -camera-front none
           script: |
             set -Eeuo pipefail
-            ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest
+            ./gradlew --no-daemon --stacktrace \
+              -PshareguardReleasePrivacyEvidence=true \
+              connectedDebugAndroidTest
 
       - name: Upload instrumentation evidence
         if: ${{ always() }}

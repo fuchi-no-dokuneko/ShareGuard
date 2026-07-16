@@ -3,7 +3,6 @@ package app.shareguard.block.render
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.os.Build
 import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -78,9 +77,8 @@ internal class CanonicalTextLayoutEngine(
                 .setIncludePad(false)
                 .setLineSpacing(0f, 1f)
                 .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
-                .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
                 .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
-            if (Build.VERSION.SDK_INT >= 26) builder.setJustificationMode(Layout.JUSTIFICATION_MODE_NONE)
+            // Builder defaults are the required SIMPLE break strategy and NONE justification.
             PreparedTextLayout(builder.build(), families)
         } catch (_: RuntimeException) {
             throw RenderException(RenderFailureCode.TEXT_SHAPING_FAILED)

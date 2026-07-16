@@ -54,7 +54,8 @@ class AppPrivateStorageLayout(
 
     internal fun persistentRelative(file: File): String {
         val canonical = canonicalApproved(file, savedResultsRoot)
-        return savedResultsRoot.toPath().relativize(canonical.toPath()).joinToString("/")
+        val rootPath = savedResultsRoot.canonicalFile.path
+        return canonical.path.substring(rootPath.length + 1).replace(File.separatorChar, '/')
     }
 
     internal fun resolvePersistent(relativePath: String): File {
@@ -90,8 +91,7 @@ class AppPrivateStorageLayout(
     private fun canonicalApproved(candidate: File, approvedRoot: File): File {
         val canonical = runCatching { candidate.canonicalFile }
             .getOrElse { throw SavedResultStorageException(StorageFailureReason.PATH_OUTSIDE_APPROVED_ROOT) }
-        val rootPath = approvedRoot.canonicalFile.toPath()
-        if (!canonical.toPath().startsWith(rootPath) || canonical == approvedRoot) {
+        if (!canonical.isStrictlyInside(approvedRoot)) {
             throw SavedResultStorageException(StorageFailureReason.PATH_OUTSIDE_APPROVED_ROOT)
         }
         return canonical

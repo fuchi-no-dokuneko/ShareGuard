@@ -1,5 +1,6 @@
 package app.shareguard.feature.saved
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,24 +18,29 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.shareguard.core.ui.ClaimLanguage
+import app.shareguard.core.model.ArtifactKind
+import app.shareguard.core.model.OutputMode
 import app.shareguard.core.ui.LimitationCard
 import app.shareguard.core.ui.SourcePixelNotice
 
 @Composable
 fun SavedResultDetailScreen(
     state: SavedResultDetailUiState,
+    exactImagePreview: ImageBitmap?,
     showImportDate: Boolean,
     onToggleImportDate: () -> Unit,
     onShare: () -> Unit,
     onRevalidate: () -> Unit,
-    onExport: () -> Unit,
+    onExport: (ArtifactKind) -> Unit,
+    onRename: () -> Unit,
+    onToggleFavourite: () -> Unit,
     onDelete: () -> Unit,
-    onMoreDetails: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
@@ -48,6 +54,15 @@ fun SavedResultDetailScreen(
             item { Detail("Storage state", state.item.lifecycleState.name.lowercase().replace('_', ' ')) }
             item { Detail("Verification state", state.item.verificationState.name.lowercase().replace('_', ' ')) }
             if (state.canonicalTextPreview != null) item { LimitationCard("Canonical text preview", state.canonicalTextPreview) }
+            if (exactImagePreview != null) {
+                item {
+                    Image(
+                        bitmap = exactImagePreview,
+                        contentDescription = "Exact verified rebuilt image preview",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             if (state.imagePreviewDescription != null) item { LimitationCard("Image preview", state.imagePreviewDescription) }
             if (state.retainedSourceRegionCount > 0) item { SourcePixelNotice(state.retainedSourceRegionCount) }
             item {
@@ -80,9 +95,42 @@ fun SavedResultDetailScreen(
                     if (!state.item.canManagedShare) OutlinedButton(onClick = onRevalidate) { Text("Revalidate") }
                 }
             }
-            item { OutlinedButton(onClick = onExport, enabled = state.item.canManagedShare, modifier = Modifier.fillMaxWidth()) { Text("Export copy") } }
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onRename) { Text("Rename") }
+                    OutlinedButton(onClick = onToggleFavourite) {
+                        Text(if (state.item.favourite) "Remove favourite" else "Favourite")
+                    }
+                }
+            }
+            if (state.item.outputMode in setOf(OutputMode.TEXT, OutputMode.BOTH)) {
+                item {
+                    OutlinedButton(
+                        onClick = { onExport(ArtifactKind.CANONICAL_TEXT) },
+                        enabled = state.item.canManagedShare,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Export canonical text copy") }
+                }
+            }
+            if (state.item.outputMode in setOf(OutputMode.REBUILT_IMAGE, OutputMode.BOTH)) {
+                item {
+                    OutlinedButton(
+                        onClick = { onExport(ArtifactKind.REBUILT_IMAGE) },
+                        enabled = state.item.canManagedShare,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Export rebuilt image copy") }
+                }
+            }
+            if (state.item.outputMode == OutputMode.DERIVATIVE_IMAGE) {
+                item {
+                    OutlinedButton(
+                        onClick = { onExport(ArtifactKind.DERIVATIVE_IMAGE) },
+                        enabled = state.item.canManagedShare,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Export derivative image copy") }
+                }
+            }
             item { OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Delete") } }
-            item { OutlinedButton(onClick = onMoreDetails, modifier = Modifier.fillMaxWidth()) { Text("More details") } }
             item { LimitationCard("Managed artifact boundary", ClaimLanguage.MANAGED_BOUNDARY) }
         }
     }

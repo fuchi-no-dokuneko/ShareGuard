@@ -29,8 +29,13 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
 
 jobs:
+  privacy-evidence:
+    name: Earn offline and canary privacy evidence
+    uses: ./.github/workflows/android-instrumentation.yml
+
   build:
     name: Build release APK and AAB
+    needs: privacy-evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
@@ -118,6 +123,7 @@ jobs:
           test -f ./gradlew
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
+            -PshareguardReleasePrivacyEvidence=true \
             test lintRelease :app:assembleRelease :app:bundleRelease
 
       - name: Verify merged release manifest

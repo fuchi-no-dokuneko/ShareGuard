@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Contains only short-lived, exact copies produced by ManagedShareCache. -->
+    <cache-path
+        name="managed_share_v2"
+        path="managed-share-v2/" />
+</paths>

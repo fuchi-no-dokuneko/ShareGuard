@@ -266,6 +266,19 @@ abstract class SavedResultDao {
         favourite: Boolean,
     ): Int
 
+    @Query(
+        """
+        UPDATE saved_results SET external_export_known = 1
+        WHERE saved_result_id = :savedResultId
+          AND visibility_confirmed = 1
+          AND lifecycle_state = 'AVAILABLE'
+          AND verification_state = 'VERIFIED'
+          AND integrity_state = 'VALID'
+          AND migration_state = 'CURRENT'
+        """,
+    )
+    abstract suspend fun markExternalExportKnown(savedResultId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     protected abstract suspend fun upsertPreview(entity: SavedPreviewEntity)
 

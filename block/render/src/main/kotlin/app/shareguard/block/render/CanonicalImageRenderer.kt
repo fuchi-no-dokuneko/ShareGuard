@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.text.Layout
+import androidx.core.graphics.createBitmap
 import app.shareguard.core.model.CanonicalBlock
 import app.shareguard.core.model.CanonicalBlockId
 import app.shareguard.core.model.CanonicalDocument
@@ -408,7 +409,7 @@ class CanonicalImageRenderer private constructor(
     }
 
     private fun allocateFreshBitmap(width: Int, height: Int): Bitmap = try {
-        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { it.setHasAlpha(false) }
+        createBitmap(width, height, Bitmap.Config.ARGB_8888).also { it.setHasAlpha(false) }
     } catch (_: IllegalArgumentException) {
         throw RenderException(RenderFailureCode.CANVAS_ALLOCATION_FAILED)
     } catch (_: OutOfMemoryError) {

@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import app.shareguard.core.model.AssuranceClass
 import app.shareguard.core.model.InputKind
 import app.shareguard.core.model.OutputMode
-import java.time.Duration
 
 enum class RepresentationStage { SOURCE, CANONICAL, OUTPUT }
 
@@ -114,8 +113,8 @@ fun PrimaryAndSecondaryActions(
     onPrimary: () -> Unit,
     secondaryLabel: String,
     onSecondary: () -> Unit,
-    primaryEnabled: Boolean = true,
     modifier: Modifier = Modifier,
+    primaryEnabled: Boolean = true,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -143,8 +142,8 @@ fun SourcePixelNotice(regionCount: Int, modifier: Modifier = Modifier) {
     }
 }
 
-fun formatElapsed(duration: Duration): String {
-    val seconds = duration.seconds.coerceAtLeast(0)
+fun formatElapsedMillis(durationMillis: Long): String {
+    val seconds = durationMillis.coerceAtLeast(0) / 1_000L
     val days = seconds / 86_400
     val hours = (seconds % 86_400) / 3_600
     val minutes = (seconds % 3_600) / 60

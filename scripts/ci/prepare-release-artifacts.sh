@@ -5,6 +5,33 @@ usage() {
   printf 'Usage: %s RELEASE_TAG OUTPUT_DIRECTORY\n' "${0##*/}" >&2
 }
 
+verify_zip_archive() {
+  python3 - "$1" <<'PY'
+import sys
+import zipfile
+
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        corrupt_entry = archive.testzip()
+except (OSError, zipfile.BadZipFile) as exc:
+    raise SystemExit(f"Release archive is invalid: {exc}") from exc
+if corrupt_entry is not None:
+    raise SystemExit(f"Release archive contains a corrupt entry: {corrupt_entry}")
+PY
+}
+
+contains_jar_signature() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+import zipfile
+
+signature = re.compile(r"^META-INF/[^/]+\.(RSA|DSA|EC)$", re.IGNORECASE)
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    raise SystemExit(0 if any(signature.match(name) for name in archive.namelist()) else 1)
+PY
+}
+
 if (( $# != 2 )); then
   usage
   exit 2
@@ -137,7 +164,7 @@ for index in "${!aab_inputs[@]}"; do
       "${output_aab}" \
       "${ANDROID_KEY_ALIAS}" >/dev/null
     jarsigner -verify "${output_aab}" >/dev/null
-    if ! unzip -Z1 "${output_aab}" | grep -Eiq '^META-INF/[^/]+\.(RSA|DSA|EC)$'; then
+    if ! contains_jar_signature "${output_aab}"; then
       echo "AAB signature verification failed." >&2
       exit 1
     fi
@@ -145,7 +172,7 @@ for index in "${!aab_inputs[@]}"; do
     output_aab="${output_dir}/ShareGuard-${safe_tag}${suffix}-unsigned.aab"
     cp -- "${source_aab}" "${output_aab}"
   fi
-  unzip -tqq "${output_aab}"
+  verify_zip_archive "${output_aab}"
 done
 
 mapfile -d '' artifacts < <(

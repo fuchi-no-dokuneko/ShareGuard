@@ -154,6 +154,26 @@ class ManagedShareCache(
         return withContext(ioDispatcher) { FileInputStream(approved) }
     }
 
+    /**
+     * Resolves only a still-live file created by [prepare]. This is the narrow bridge to Android's
+     * maintained FileProvider; callers cannot use it to resolve arbitrary cache paths or source files.
+     */
+    fun requirePreparedFile(descriptor: ManagedShareDescriptor): File {
+        val entry = entries[descriptor.cacheToken]
+            ?: throw SavedResultStorageException(StorageFailureReason.RECORD_NOT_FOUND)
+        if (entry.descriptor != descriptor || monotonicClock.elapsedRealtimeMillis() >= entry.expiresAtElapsedMillis) {
+            throw SavedResultStorageException(StorageFailureReason.RECORD_NOT_FOUND)
+        }
+        val approved = repository.layout.resolveShare(
+            descriptor.savedResultId,
+            descriptor.cacheToken.value,
+        )
+        if (approved != entry.file.canonicalFile || !approved.isFile) {
+            throw SavedResultStorageException(StorageFailureReason.PATH_OUTSIDE_APPROVED_ROOT)
+        }
+        return approved
+    }
+
     suspend fun cleanupExpired(): Int {
         val now = monotonicClock.elapsedRealtimeMillis()
         val expired = entries.filterValues { now >= it.expiresAtElapsedMillis }.keys.toList()

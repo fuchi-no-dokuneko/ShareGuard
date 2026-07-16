@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releasePrivacyEvidence = providers.gradleProperty("shareguardReleasePrivacyEvidence")
+    .map(String::toBooleanStrict)
+    .orElse(false)
+
 android {
     namespace = "app.shareguard.canonical"
     compileSdk = 36
@@ -15,6 +19,11 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        buildConfigField(
+            "boolean",
+            "RELEASE_PRIVACY_EVIDENCE",
+            releasePrivacyEvidence.map(Boolean::toString).get(),
+        )
     }
 
     compileOptions {
@@ -59,6 +68,9 @@ android {
         abortOnError = true
         checkDependencies = true
         warningsAsErrors = true
+        // SDK/dependency freshness is controlled by the audited toolchain and dependency review.
+        // Keep correctness/security lint strict without requiring unavailable preview SDKs.
+        disable += setOf("GradleDependency", "OldTargetApi")
     }
 }
 
@@ -86,12 +98,14 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.work.runtime)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
@@ -99,6 +113,9 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.room.runtime)
+    testImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)

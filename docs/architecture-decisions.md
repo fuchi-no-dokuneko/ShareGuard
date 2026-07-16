@@ -120,6 +120,12 @@ The app does not claim to know when a receiving app opens or finishes reading a 
 
 Optional bounded local jitter may run before opening the Android Sharesheet. It must be cancellable, off the UI thread, require no network, and create no anonymity or anti-correlation claim. It is not an enforced waiting target or scheduled-share feature.
 
+The first release exposes this as an off-by-default user option bounded to 100–500 ms. This is an
+interaction envelope, not a detector threshold or security parameter: it is short enough to remain a
+direct user-triggered Share action, is covered by deterministic boundary tests, and may be revised only as
+a versioned UX policy. The selected duration exists only inside the cancellable coroutine and is never
+written to Saved Result metadata, filenames, artifacts, share Intents, or diagnostic events.
+
 ### Assumptions and consequences
 
 - Temporary permission duration and cache expiry are Android lifecycle controls, not guarantees about recipient behavior.

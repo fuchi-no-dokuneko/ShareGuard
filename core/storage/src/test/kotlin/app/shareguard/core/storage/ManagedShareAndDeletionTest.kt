@@ -37,12 +37,16 @@ class ManagedShareAndDeletionTest {
             assertThat(descriptor.artifactKind).isEqualTo(ArtifactKind.CANONICAL_TEXT)
             assertThat(descriptor.temporaryReadOnlyRepresentation).isTrue()
             assertThat(descriptor.toString()).doesNotContain(id.value)
+            assertThat(cache.requirePreparedFile(descriptor).canonicalPath)
+                .startsWith(fixture.layout.managedShareRoot.canonicalPath + File.separator)
             cache.openReadOnly(descriptor.cacheToken).use { input ->
                 assertThat(input.readBytes().decodeToString()).isEqualTo("managed final bytes")
             }
 
             now.set(150)
             assertThat(cache.cleanupExpired()).isEqualTo(1)
+            assertThat(captureStorageFailure { cache.requirePreparedFile(descriptor) }.reason)
+                .isEqualTo(StorageFailureReason.RECORD_NOT_FOUND)
             assertThat(captureStorageFailure { cache.openReadOnly(descriptor.cacheToken) }.reason)
                 .isEqualTo(StorageFailureReason.RECORD_NOT_FOUND)
         }

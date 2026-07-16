@@ -128,6 +128,15 @@ class SavedResultRepository(
             ?: throw SavedResultStorageException(StorageFailureReason.RECORD_NOT_SHAREABLE)
     }
 
+    /** Records only that a user-selected external copy was successfully written. */
+    suspend fun noteExternalExport(savedResultId: SavedResultId): SavedResult {
+        require(dao.markExternalExportKnown(savedResultId.value) == 1) {
+            "Saved Result is unavailable for export updates"
+        }
+        return dao.findShareable(savedResultId.value)?.toModel()
+            ?: throw SavedResultStorageException(StorageFailureReason.RECORD_NOT_SHAREABLE)
+    }
+
     internal suspend fun findAny(savedResultId: SavedResultId): SavedResultWithArtifacts? =
         dao.findAny(savedResultId.value)
 
@@ -209,14 +218,16 @@ internal fun deleteTreeLogically(target: File, approvedRoot: File): Boolean {
     if (!target.exists()) return true
     val targetCanonical = runCatching { target.canonicalFile }.getOrNull() ?: return false
     val rootCanonical = runCatching { approvedRoot.canonicalFile }.getOrNull() ?: return false
-    if (targetCanonical == rootCanonical || !targetCanonical.toPath().startsWith(rootCanonical.toPath())) return false
+    if (target.isSymbolicLinkCompat() || !targetCanonical.isStrictlyInside(rootCanonical)) return false
     val children = target.listFiles() ?: return false
     var complete = true
     children.forEach { child ->
         val canonical = runCatching { child.canonicalFile }.getOrNull()
-        if (canonical == null || !canonical.toPath().startsWith(targetCanonical.toPath())) {
+        if (child.isSymbolicLinkCompat()) {
+            if (!child.delete() && child.exists()) complete = false
+        } else if (canonical == null || !canonical.isStrictlyInside(targetCanonical)) {
             complete = false
-        } else if (child.isDirectory && !java.nio.file.Files.isSymbolicLink(child.toPath())) {
+        } else if (child.isDirectory) {
             if (!deleteTreeLogically(child, targetCanonical)) complete = false
         } else if (!child.delete() && child.exists()) {
             complete = false

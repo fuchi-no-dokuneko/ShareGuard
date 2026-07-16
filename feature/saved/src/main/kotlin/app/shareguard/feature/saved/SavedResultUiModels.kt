@@ -17,6 +17,7 @@ data class SavedResultCardUiModel(
     val assuranceClass: AssuranceClass,
     val savedAtLabel: String,
     val elapsedSinceImport: String,
+    val storageByteCount: Long,
     val storageBytesLabel: String,
     val previewDescription: String?,
     val integrityState: IntegrityState,
@@ -27,6 +28,7 @@ data class SavedResultCardUiModel(
 ) {
     init {
         require(id.isNotBlank() && displayLabel.isNotBlank())
+        require(storageByteCount >= 0L)
         if (canManagedShare) {
             require(integrityState == IntegrityState.VALID)
             require(verificationState == VerificationState.VERIFIED)
@@ -65,6 +67,7 @@ data class SavedResultDetailUiState(
 
 data class SavedSettingsUiState(
     val showContentPreviews: Boolean,
+    val protectSensitiveScreens: Boolean,
     val defaultLayout: SavedLayout,
     val defaultSort: SavedSort,
     val waitingTargetLabel: String?,

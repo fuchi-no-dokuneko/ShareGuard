@@ -2,6 +2,7 @@ package app.shareguard.block.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import androidx.core.graphics.createBitmap
 import app.shareguard.core.model.NormalizedRect
 import app.shareguard.core.model.SafeSummary
 import com.google.mlkit.vision.barcode.BarcodeScanner
@@ -60,7 +61,7 @@ class MlKitBundledBarcodeRecognizer private constructor(
 }
 
 private fun app.shareguard.block.image.PixelImage.toBarcodeBitmap(): Bitmap {
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val storage = IntArray(Math.multiplyExact(width, height))
     try {
         for (y in 0 until height) for (x in 0 until width) storage[y * width + x] = argbAt(x, y)

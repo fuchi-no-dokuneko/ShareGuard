@@ -57,7 +57,18 @@ apkanalyzer=$(resolve_sdk_tool apkanalyzer)
 apksigner=$(resolve_sdk_tool apksigner)
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 
-unzip -tqq "${apk}"
+python3 - "${apk}" <<'PY'
+import sys
+import zipfile
+
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        corrupt_entry = archive.testzip()
+except (OSError, zipfile.BadZipFile) as exc:
+    raise SystemExit(f"APK archive is invalid: {exc}") from exc
+if corrupt_entry is not None:
+    raise SystemExit(f"APK archive contains a corrupt entry: {corrupt_entry}")
+PY
 
 tmp_manifest=$(mktemp)
 trap 'rm -f -- "${tmp_manifest}"' EXIT

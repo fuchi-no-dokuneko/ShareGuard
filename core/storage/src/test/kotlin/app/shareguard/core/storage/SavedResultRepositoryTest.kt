@@ -86,6 +86,23 @@ class SavedResultRepositoryTest {
     }
 
     @Test
+    fun successfulExternalExportMarkerChangesOnlyManagementMetadata() = runTest {
+        StorageTestFixture().use { fixture ->
+            val persisted = fixture.persistText()
+            val id = persisted.savedResult.savedResultId
+            val record = fixture.repository.findAny(id)!!
+            val artifact = fixture.layout.resolvePersistent(record.artifacts.single().relativePath)
+            val before = artifact.readBytes()
+
+            val updated = fixture.repository.noteExternalExport(id)
+
+            assertThat(updated.artifactManifest.externalExportKnown).isTrue()
+            assertThat(updated.canManagedShare).isTrue()
+            assertThat(artifact.readBytes()).isEqualTo(before)
+        }
+    }
+
+    @Test
     fun processRecreationRetainsOnlyDurablyCommittedVisibleResults() = runTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val counter = RECREATION_COUNTER.incrementAndGet()

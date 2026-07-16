@@ -3,7 +3,6 @@ package app.shareguard.core.ui
 import app.shareguard.core.model.AssuranceClass
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
-import java.time.Duration
 
 class ClaimLanguageTest {
     @Test
@@ -18,9 +17,9 @@ class ClaimLanguageTest {
 
     @Test
     fun elapsedFormattingNeverReturnsNegativeText() {
-        assertThat(formatElapsed(Duration.ofSeconds(-9))).isEqualTo("less than a minute")
-        assertThat(formatElapsed(Duration.ofSeconds(3_661))).isEqualTo("1 h 1 min")
-        assertThat(formatElapsed(Duration.ofDays(2).plusHours(3))).isEqualTo("2 d 3 h")
+        assertThat(formatElapsedMillis(-9_000)).isEqualTo("less than a minute")
+        assertThat(formatElapsedMillis(3_661_000)).isEqualTo("1 h 1 min")
+        assertThat(formatElapsedMillis((2 * 24L + 3L) * 3_600_000L)).isEqualTo("2 d 3 h")
     }
 
     @Test

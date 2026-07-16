@@ -2,6 +2,7 @@ package app.shareguard.block.render
 
 import android.graphics.Paint
 import app.shareguard.core.model.ScriptCode
+import com.ibm.icu.lang.UScript
 import java.text.BreakIterator
 import java.util.Locale
 
@@ -87,19 +88,19 @@ internal class BundledFontResolver(
     }
 
     private fun inferScripts(text: String): Set<ScriptCode> = buildSet {
-        text.codePoints().forEach { scalar ->
-            val script = when (Character.UnicodeScript.of(scalar)) {
-                Character.UnicodeScript.LATIN -> ScriptCode.LATIN
-                Character.UnicodeScript.GREEK -> ScriptCode.GREEK
-                Character.UnicodeScript.CYRILLIC -> ScriptCode.CYRILLIC
-                Character.UnicodeScript.ARABIC -> ScriptCode.ARABIC
-                Character.UnicodeScript.HEBREW -> ScriptCode.HEBREW
-                Character.UnicodeScript.DEVANAGARI -> ScriptCode.DEVANAGARI
-                Character.UnicodeScript.HAN -> ScriptCode.HAN
-                Character.UnicodeScript.HANGUL -> ScriptCode.HANGUL
-                Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA -> ScriptCode.KANA
-                Character.UnicodeScript.COMMON -> ScriptCode.COMMON
-                Character.UnicodeScript.INHERITED -> ScriptCode.INHERITED
+        text.forEachCodePoint { scalar ->
+            val script = when (UScript.getScript(scalar)) {
+                UScript.LATIN -> ScriptCode.LATIN
+                UScript.GREEK -> ScriptCode.GREEK
+                UScript.CYRILLIC -> ScriptCode.CYRILLIC
+                UScript.ARABIC -> ScriptCode.ARABIC
+                UScript.HEBREW -> ScriptCode.HEBREW
+                UScript.DEVANAGARI -> ScriptCode.DEVANAGARI
+                UScript.HAN -> ScriptCode.HAN
+                UScript.HANGUL -> ScriptCode.HANGUL
+                UScript.HIRAGANA, UScript.KATAKANA -> ScriptCode.KANA
+                UScript.COMMON -> ScriptCode.COMMON
+                UScript.INHERITED -> ScriptCode.INHERITED
                 else -> ScriptCode.OTHER
             }
             add(script)
@@ -107,7 +108,7 @@ internal class BundledFontResolver(
     }
 
     private fun validateCanonicalControls(text: String) {
-        text.codePoints().forEach { scalar ->
+        text.forEachCodePoint { scalar ->
             val allowedLayoutControl = scalar == '\n'.code || scalar == '\t'.code || scalar == '\r'.code
             if (!allowedLayoutControl && Character.getType(scalar) == Character.CONTROL.toInt()) {
                 throw RenderException(RenderFailureCode.INVALID_CANONICAL_CONTROL)
@@ -120,4 +121,13 @@ internal class BundledFontResolver(
 
     private fun isLayoutWhitespace(character: Char): Boolean =
         character == '\n' || character == '\r' || character == '\t' || character == ' '
+}
+
+private inline fun String.forEachCodePoint(action: (Int) -> Unit) {
+    var offset = 0
+    while (offset < length) {
+        val scalar = Character.codePointAt(this, offset)
+        action(scalar)
+        offset += Character.charCount(scalar)
+    }
 }

@@ -26,6 +26,7 @@ import app.shareguard.core.ui.LimitationCard
 fun SavedSettingsScreen(
     state: SavedSettingsUiState,
     onShowPreviewsChange: (Boolean) -> Unit,
+    onProtectSensitiveScreensChange: (Boolean) -> Unit,
     onLayoutChange: (SavedLayout) -> Unit,
     onSortChange: (SavedSort) -> Unit,
     onConfigureWaitingTarget: () -> Unit,
@@ -41,6 +42,13 @@ fun SavedSettingsScreen(
         ) {
             item { Text("Saved Results settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() }) }
             item { ToggleRow("Show content previews", state.showContentPreviews, onShowPreviewsChange) }
+            item {
+                ToggleRow(
+                    "Block screenshots and obscure recent-app previews",
+                    state.protectSensitiveScreens,
+                    onProtectSensitiveScreensChange,
+                )
+            }
             item {
                 Text("Default layout")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
