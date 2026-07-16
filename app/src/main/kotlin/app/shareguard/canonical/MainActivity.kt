@@ -77,6 +77,30 @@ class MainActivity : ComponentActivity() {
 
     internal fun currentUiStateForTest(): ShareGuardUiState = viewModel.state.value
 
+    internal fun openSavedResultsForTest() {
+        viewModel.openSavedResults()
+    }
+
+    internal fun requestSavedResultShareForTest(id: String) {
+        viewModel.shareSavedResult(id)
+    }
+
+    internal fun confirmManagedShareForTest() {
+        viewModel.confirmManagedShare()
+    }
+
+    internal fun selectSavedResultForTest(id: String) {
+        viewModel.toggleSavedSelection(id)
+    }
+
+    internal fun requestDeleteSelectedForTest() {
+        viewModel.requestDeleteSelectedSavedResults()
+    }
+
+    internal fun confirmDeletionForTest() {
+        viewModel.confirmDeletion()
+    }
+
     internal fun runCanonicalTextWorkflowForTest(text: String, outputMode: OutputMode = OutputMode.TEXT) {
         viewModel.openTextEntry(text)
         viewModel.chooseOutput(outputMode)

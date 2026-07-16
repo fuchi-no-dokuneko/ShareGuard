@@ -9,7 +9,7 @@ data class BundledFontResource(
     val familyId: String,
     val version: String,
     val scripts: Set<ScriptCode>,
-    @FontRes val resourceId: Int,
+    @param:FontRes val resourceId: Int,
 )
 
 class ResourceBundledFontRegistry(

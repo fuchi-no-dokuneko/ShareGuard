@@ -82,6 +82,31 @@ CI must upload evidence with an always-run artifact step even when an earlier st
 
 The managed emulator is authoritative only for the Android behavior it actually exercises. Host unit results must not be relabelled as device results, and emulator results must not be relabelled as physical-device coverage.
 
+### 4.1 Implemented managed-device suites
+
+The following device-backed tests are implemented at the current source revision. They remain
+`IMPLEMENTED_NOT_RUN` until the public GitHub workflows retain qualifying test output for that exact
+commit:
+
+| Evidence family | Executable implementation | Managed lane |
+| --- | --- | --- |
+| App/activity restoration | `IntentLifecycleInstrumentedTest` | API 23 and API 36 connected tests |
+| True process loss at persistence checkpoint | `ProcessDeathPersistenceInstrumentedTest` | API 36 isolated destructive lane; the seed process is killed immediately after durable metadata commit and a fresh instrumentation process verifies quarantine and transient purge |
+| True emulator reboot | `DestructiveDeviceLifecycleInstrumentedTest` | API 36 isolated destructive lane; one APK installation seeds a committed result, the runner proves Linux boot-ID change, and the post-boot phase verifies result/timer restoration |
+| Cross-package URI boundary | `CrossAppSharingInstrumentedTest` plus the test-APK `TestShareReceiverActivity` | API 23 and API 36; receiver package/UID differs from the application, explicit read grant succeeds, no-grant access and write-open fail, and paths outside the managed-share root are rejected |
+| Android storage/platform behavior | `DatabaseMigrationInstrumentedTest`, `LowStorageFailureInstrumentedTest`, `SavedResultPlatformInstrumentedTest` | API 23 and API 36; real SQLite migration, injected platform `ENOSPC`, Android Keystore loss, bulk deletion, and blocked system-chooser launch |
+| Accessibility semantics | `SavedResultsAccessibilityInstrumentedTest` | API 23 and API 36; the natural elapsed label exists in Compose semantics and accepts accessibility focus |
+| Bundled runtime/privacy evidence | `ReleasePrivacyEvidenceInstrumentedTest`, `BundledMlKitInstrumentedTest`, `BundledFontAndPngInstrumentedTest` | API 23 and API 36 |
+
+`LowStorageFailureInstrumentedTest` injects the Android `ENOSPC` errno after the staged file has been
+synced and proves transactional cleanup. It does not claim that the emulator filesystem was physically
+filled. Whole-filesystem exhaustion remains a destructive supplemental case because an uncontrolled full
+data partition can prevent the runner and evidence writer from operating.
+
+The default connected-test invocation excludes `@LargeTest`; the isolated lifecycle job invokes those
+two-phase methods directly. This prevents ordinary method ordering or an APK reinstall from impersonating
+a process-death or reboot boundary. A large test reported by the ordinary lane is a configuration failure.
+
 ## 5. Core test matrix
 
 ### 5.1 JVM unit, property, integration, and mutation matrix
@@ -126,12 +151,12 @@ The managed emulator is authoritative only for the Android behavior it actually 
 | `IT-SAVED-UI` | List/detail/search/sort/filter/list-grid/favorite/rename/preview toggle/storage/error states; rename/favorite do not change artifact bytes. | I | Blocked | Required |
 | `IT-REVALIDATE` | Stale/unknown/migrated records revalidate before managed share; byte/digest/MIME/revision failure removes verified badge/share path and never substitutes another artifact. | I/D | Blocked | Required |
 | `IT-EXPORT-COPY` | Explicit Save is implemented only as user-selected export; safe app-generated name; source filename/timer absent; reopened exported bytes equal the verified export-time artifact; later External Copy edits remain out of scope. | I/X | Blocked | Required |
-| `IT-PROCESS-DEATH` | Kill at import, block apply, verification, every persistence boundary, preview creation, share-cache creation, deletion, and migration. Restart/sweep yields only committed valid results or quarantined/deletion-pending state. | D | Blocked | Required, isolated |
-| `IT-REBOOT` | After committed save, reboot emulator; monotonic reference is unavailable, wall-clock restoration is non-negative and honestly classified; result and integrity state survive; no exact-time claim. | D | Blocked | Required, isolated |
+| `IT-PROCESS-DEATH` | Kill at import, block apply, verification, every persistence boundary, preview creation, share-cache creation, deletion, and migration. Restart/sweep yields only committed valid results or quarantined/deletion-pending state. | D | Blocked | Metadata-commit kill/restart implemented; remaining checkpoint expansion required |
+| `IT-REBOOT` | After committed save, reboot emulator; monotonic reference is unavailable, wall-clock restoration is non-negative and honestly classified; result and integrity state survive; no exact-time claim. | D | Blocked | Implemented, execution evidence required |
 | `IT-CLOCK` | Same-boot wall-clock backward/forward changes, time-zone and DST transitions, background/foreground, process restore, and reboot. Timer remains advisory, non-negative, and UI-only; reduced confidence does not automatically block share. | D | Blocked | Required, isolated |
-| `IT-LOW-STORAGE` | Exhaust app/filesystem quota at artifact write, flush, DB commit, preview, and share-cache creation; no normal visible result after failed persistence; retry is safe. | D | Blocked | Required, isolated |
-| `IT-KEY` | Keystore-backed key availability, invalidation/loss, ciphertext never shown as valid, per-result key removed when used for logical deletion. | D/P | Blocked | Required where emulator supports behavior; supplement physically |
-| `IT-MIGRATION` | Install historical fixture, upgrade in place, interrupt migration, reopen, verify artifacts unchanged unless revalidated, integrity sweep catches orphan/mismatch, backup remains disabled. | D | Blocked | Required, isolated |
+| `IT-LOW-STORAGE` | Exhaust app/filesystem quota at artifact write, flush, DB commit, preview, and share-cache creation; no normal visible result after failed persistence; retry is safe. | D | Blocked | Injected ENOSPC cleanup implemented; whole-filesystem supplemental case remains |
+| `IT-KEY` | Keystore-backed key availability, invalidation/loss, ciphertext never shown as valid, per-result key removed when used for logical deletion. | D/P | Blocked | Emulator key-loss case implemented; execution and physical-device supplement required |
+| `IT-MIGRATION` | Install historical fixture, upgrade in place, interrupt migration, reopen, verify artifacts unchanged unless revalidated, integrity sweep catches orphan/mismatch, backup remains disabled. | D | Blocked | Real v1 SQLite migration implemented; interrupted install/upgrade expansion remains |
 | `IT-CORRUPTION` | Mutate managed artifact/preview/record/share cache after setup; reopen/revalidate/sweep quarantines it, verified share is blocked, authoritative artifact is never replaced by preview/cache. | D | Blocked | Required, isolated |
 | `IT-DELETE` | Single, bulk, delete-all, partial fault, retry, concurrent open/share attempt, session purge versus Saved Result separation; every app-addressable reference/key/cache removed and item immediately non-shareable. | D | Blocked | Required, isolated |
 | `IT-SHARE-TEXT` | System Sharesheet launch with only approved `text/plain`; no hidden HTML/Import Anchor; no custom target UI or persistent target/recipient event. | I/X | Blocked | Required |

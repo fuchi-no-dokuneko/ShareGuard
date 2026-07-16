@@ -120,3 +120,136 @@ jobs:
           path: |
             **/build/outputs/androidTest-results/**
             **/build/reports/androidTests/**
+
+  reboot-restoration:
+    name: Destructive reboot restoration (API 36)
+    needs: wrapper-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Ensure Android SDK 36 build packages
+        run: |
+          set -Eeuo pipefail
+          command -v sdkmanager >/dev/null
+          sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" >/dev/null
+
+      - name: Check wrapper and enable KVM on the disposable runner
+        run: |
+          set -Eeuo pipefail
+          test -f ./gradlew
+          chmod +x ./gradlew
+          if [[ ! -e /dev/kvm ]]; then
+            echo "/dev/kvm is unavailable on this GitHub-hosted runner." >&2
+            exit 1
+          fi
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Persist, reboot, and restore on one emulator installation
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          channel: stable
+          cores: 2
+          ram-size: 4096M
+          heap-size: 1024M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: >-
+            -no-window -noaudio -no-boot-anim
+            -gpu swiftshader_indirect
+            -camera-back none -camera-front none
+          script: |
+            set -Eeuo pipefail
+            ./gradlew --no-daemon --stacktrace \
+              -PshareguardReleasePrivacyEvidence=true \
+              :app:assembleDebug :app:assembleDebugAndroidTest
+
+            app_apk=$(find app/build/outputs/apk/debug -type f -name 'app-debug.apk' -print -quit)
+            test_apk=$(find app/build/outputs/apk/androidTest/debug -type f -name '*-androidTest.apk' -print -quit)
+            test -n "${app_apk}"
+            test -n "${test_apk}"
+            adb install --no-streaming -r "${app_apk}"
+            adb install --no-streaming -r "${test_apk}"
+
+            runner='app.shareguard.canonical.debug.test/androidx.test.runner.AndroidJUnitRunner'
+            process_probe='app.shareguard.canonical.ProcessDeathPersistenceInstrumentedTest'
+            reboot_probe='app.shareguard.canonical.DestructiveDeviceLifecycleInstrumentedTest'
+            mkdir -p app/build/outputs/destructive-lifecycle
+
+            set +e
+            adb shell am instrument -w -r \
+              -e class "${process_probe}#dieImmediatelyAfterMetadataCommit" \
+              "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-seed.txt
+            process_seed_status=${PIPESTATUS[0]}
+            set -e
+            if grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-seed.txt; then
+              echo "The process-death seed returned normally instead of dying at the checkpoint." >&2
+              exit 1
+            fi
+            printf 'instrumentation_exit=%s\n' "${process_seed_status}" \
+              >> app/build/outputs/destructive-lifecycle/process-death-seed.txt
+
+            adb shell am instrument -w -r \
+              -e class "${process_probe}#freshProcessQuarantinesTheInterruptedCommitAndPurgesItsTransientSource" \
+              "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-verify.txt
+            grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-verify.txt
+
+            adb shell am instrument -w -r \
+              -e class "${reboot_probe}#seedBeforeReboot" \
+              "${runner}" | tee app/build/outputs/destructive-lifecycle/reboot-seed.txt
+            grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/reboot-seed.txt
+
+            boot_before=$(adb shell cat /proc/sys/kernel/random/boot_id | tr -d '\r')
+            adb reboot
+            adb wait-for-device
+            for attempt in $(seq 1 120); do
+              if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+                break
+              fi
+              if [[ "${attempt}" == "120" ]]; then
+                echo "The emulator did not complete its reboot." >&2
+                exit 1
+              fi
+              sleep 1
+            done
+            boot_after=$(adb shell cat /proc/sys/kernel/random/boot_id | tr -d '\r')
+            test -n "${boot_before}"
+            test -n "${boot_after}"
+            test "${boot_before}" != "${boot_after}"
+
+            adb shell am instrument -w -r \
+              -e class "${reboot_probe}#verifyAfterReboot" \
+              "${runner}" | tee app/build/outputs/destructive-lifecycle/reboot-verify.txt
+            grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/reboot-verify.txt
+
+      - name: Upload reboot lifecycle evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reboot-restoration-api-36-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 30
+          path: app/build/outputs/destructive-lifecycle/*

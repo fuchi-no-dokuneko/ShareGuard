@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.android.lint)
 }
 
 kotlin {
@@ -10,6 +11,12 @@ kotlin {
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+}
+
+lint {
+    abortOnError = true
+    warningsAsErrors = true
+    disable += setOf("GradleDependency", "OldTargetApi")
 }
 
 dependencies {

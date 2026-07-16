@@ -18,6 +18,7 @@ android {
         versionCode = 1
         versionName = rootProject.version.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["notAnnotation"] = "androidx.test.filters.LargeTest"
         vectorDrawables.useSupportLibrary = true
         buildConfigField(
             "boolean",
@@ -120,6 +121,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.room.runtime)
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.espresso.core)
 }

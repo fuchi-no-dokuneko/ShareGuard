@@ -86,10 +86,10 @@ enum class CanonicalRenderTheme { DOCUMENT, CARD, MESSAGE }
 data class CanonicalRenderPolicy(
     val theme: CanonicalRenderTheme,
     val resourcePlan: RenderResourcePlan,
-    @ColorInt val backgroundColor: Int,
-    @ColorInt val foregroundColor: Int,
-    @ColorInt val secondarySurfaceColor: Int,
-    @ColorInt val redactionColor: Int,
+    @param:ColorInt val backgroundColor: Int,
+    @param:ColorInt val foregroundColor: Int,
+    @param:ColorInt val secondarySurfaceColor: Int,
+    @param:ColorInt val redactionColor: Int,
     val outputMimeType: MimeType = MimeType("image/png"),
 ) {
     init {

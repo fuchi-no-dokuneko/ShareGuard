@@ -25,9 +25,12 @@ import app.shareguard.core.model.SavedResult
 import app.shareguard.core.model.SavedResultId
 import app.shareguard.core.model.SafeSummary
 import app.shareguard.core.model.SemanticRisk
-import app.shareguard.core.model.WallClockInstant
+import app.shareguard.core.session.AdvisoryImportTimer
+import app.shareguard.core.session.AdvisoryTimerReading
+import app.shareguard.core.session.AndroidMonotonicClockSource
 import app.shareguard.core.session.SealedSourceSnapshot
 import app.shareguard.core.session.PolicyBoundedRandomDelay
+import app.shareguard.core.session.SystemWallClockSource
 import app.shareguard.core.storage.ManagedShareDescriptor
 import app.shareguard.core.ui.formatElapsedMillis
 import app.shareguard.feature.output.ManagedShareIntentFactory
@@ -90,7 +93,9 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     private var pendingExternalExport: ManagedShareDescriptor? = null
     private var shareJitterEnabled: Boolean = _state.value.shareJitterEnabled
     private var referenceTimerJob: Job? = null
-    private var activeImportAnchor: ImportAnchor? = null
+    private var activeImportTimer: AdvisoryImportTimer? = null
+    private val savedResultTimers = mutableMapOf<String, AdvisoryImportTimer>()
+    private val bootSessionReferenceSource = EstimatedBootSessionReferenceSource()
     private var imageClaimedMime: String? = null
 
     fun openTextEntry(initialText: String = "", method: ImportMethod = ImportMethod.DIRECT_ENTRY) {
@@ -503,6 +508,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             runCatching { container.repository.listVisible() }
                 .onSuccess {
                     allSavedResults = it
+                    savedResultTimers.keys.retainAll(it.map { result -> result.savedResultId.value }.toSet())
                     applySavedView()
                 }
                 .onFailure(::showError)
@@ -617,6 +623,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             runCatching { container.deletionService.deleteBulk(ids) }
                 .onSuccess {
+                    ids.forEach { savedResultTimers.remove(it.value) }
                     _state.value = _state.value.copy(
                         selectedSavedIds = emptySet(),
                         pendingDeletionIds = emptySet(),
@@ -789,15 +796,8 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
             _state.value = _state.value.copy(
                 route = AppRoute.PRE_SHARE,
                 pendingShareId = id,
-                pendingShareElapsed = formatElapsedMillis(
-                    authoritative.importAnchor.elapsedMillis(
-                        WallClockInstant(System.currentTimeMillis().coerceAtLeast(0)),
-                    ),
-                ),
-                pendingShareTargetStatus = waitingTargetStatus(
-                    authoritative,
-                    WallClockInstant(System.currentTimeMillis().coerceAtLeast(0)),
-                ),
+                pendingShareElapsed = formatElapsedMillis(authoritative.timerReading().elapsed.value),
+                pendingShareTargetStatus = waitingTargetStatus(authoritative),
             )
         }
     }
@@ -1026,7 +1026,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         savedAtLabel = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
             .format(Date(persistedAtWallClock.epochMillis)),
         elapsedSinceImport = formatElapsedMillis(
-            importAnchor.elapsedMillis(WallClockInstant(System.currentTimeMillis().coerceAtLeast(0))),
+            timerReading().elapsed.value,
         ),
         storageByteCount = storageByteCount.value,
         storageBytesLabel = formatBytes(storageByteCount.value),
@@ -1039,9 +1039,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     )
 
     private fun SavedResult.toDetailUi(): SavedResultDetailUiState {
-        val elapsedMillis = importAnchor.elapsedMillis(
-            WallClockInstant(System.currentTimeMillis().coerceAtLeast(0)),
-        )
+        val elapsedMillis = timerReading().elapsed.value
         val waitingTarget = _state.value.waitingTargetMillis
         return SavedResultDetailUiState(
             item = toCardUi(),
@@ -1066,7 +1064,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun startReferenceTimer(anchor: ImportAnchor?) {
-        activeImportAnchor = anchor
+        activeImportTimer = anchor?.newAdvisoryTimer()
         referenceTimerJob?.cancel()
         refreshReferenceDisplays()
         referenceTimerJob = viewModelScope.launch {
@@ -1078,31 +1076,30 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun refreshReferenceDisplays() {
-        val now = WallClockInstant(System.currentTimeMillis().coerceAtLeast(0))
-        val activeLabel = activeImportAnchor?.let { formatElapsedMillis(it.elapsedMillis(now)) }
+        val activeLabel = activeImportTimer?.sample()?.let { formatElapsedMillis(it.elapsed.value) }
         val current = _state.value
         val refreshedItems = current.savedItems.map { card ->
             val result = allSavedResults.firstOrNull { it.savedResultId.value == card.id }
             if (result == null) card else card.copy(
-                elapsedSinceImport = formatElapsedMillis(result.importAnchor.elapsedMillis(now)),
+                elapsedSinceImport = formatElapsedMillis(result.timerReading().elapsed.value),
             )
         }
         val refreshedDetail = current.savedDetail?.let { detail ->
             val result = allSavedResults.firstOrNull { it.savedResultId.value == detail.item.id }
             if (result == null) detail else detail.copy(
                 item = detail.item.copy(
-                    elapsedSinceImport = formatElapsedMillis(result.importAnchor.elapsedMillis(now)),
+                    elapsedSinceImport = formatElapsedMillis(result.timerReading().elapsed.value),
                 ),
             )
         }
         val pendingShareElapsed = current.pendingShareId?.let { id ->
             allSavedResults.firstOrNull { it.savedResultId.value == id }?.let { result ->
-                formatElapsedMillis(result.importAnchor.elapsedMillis(now))
+                formatElapsedMillis(result.timerReading().elapsed.value)
             }
         }
         val pendingShareTargetStatus = current.pendingShareId?.let { id ->
             allSavedResults.firstOrNull { it.savedResultId.value == id }?.let { result ->
-                waitingTargetStatus(result, now)
+                waitingTargetStatus(result)
             }
         }
         _state.value = current.copy(
@@ -1114,15 +1111,26 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
-    private fun waitingTargetStatus(result: SavedResult, now: WallClockInstant): String? {
+    private fun waitingTargetStatus(result: SavedResult): String? {
         val target = _state.value.waitingTargetMillis ?: return null
-        val remaining = (target - result.importAnchor.elapsedMillis(now)).coerceAtLeast(0L)
+        val remaining = (target - result.timerReading().elapsed.value).coerceAtLeast(0L)
         return if (remaining == 0L) {
             "Your user-defined waiting target has been reached. This does not change assurance."
         } else {
             "${formatElapsedMillis(remaining)} remains to your user-defined waiting target. You may share now."
         }
     }
+
+    private fun SavedResult.timerReading(): AdvisoryTimerReading = savedResultTimers
+        .getOrPut(savedResultId.value) { importAnchor.newAdvisoryTimer() }
+        .sample()
+
+    private fun ImportAnchor.newAdvisoryTimer(): AdvisoryImportTimer = AdvisoryImportTimer(
+        anchor = this,
+        wallClock = SystemWallClockSource,
+        monotonicClock = AndroidMonotonicClockSource,
+        bootSessionReferenceSource = bootSessionReferenceSource,
+    )
 
     private fun TextReviewPlan.toReviewItems(): List<ReviewItemUiModel> {
         val source = sourceText
@@ -1248,7 +1256,7 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     private fun clearTransientSession() {
         referenceTimerJob?.cancel()
         referenceTimerJob = null
-        activeImportAnchor = null
+        activeImportTimer = null
         clearTransientPreview()
         activeSession?.lifecycle?.discard()
         activeSession = null

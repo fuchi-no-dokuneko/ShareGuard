@@ -4,6 +4,7 @@ import org.cyclonedx.model.Component
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.lint) apply false
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.kotlin.compose) apply false
@@ -52,4 +53,16 @@ tasks.register("quality") {
     group = "verification"
     description = "Runs all local static checks and unit tests."
     dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
+}
+
+tasks.register("standaloneLint") {
+    group = "verification"
+    description = "Runs strict lint for Kotlin/JVM modules that Android lint otherwise treats as external."
+    dependsOn(
+        ":core:model:lint",
+        ":core:pipeline:lint",
+        ":block:text:lint",
+        ":block:url:lint",
+        ":test-corpus:lint",
+    )
 }

@@ -74,7 +74,7 @@ jobs:
       - name: Run unit tests, lint, and debug build
         run: |
           set -Eeuo pipefail
-          ./gradlew --no-daemon --stacktrace test lintDebug :app:assembleDebug :app:cyclonedxDirectBom
+          ./gradlew --no-daemon --stacktrace test standaloneLint lintDebug :app:assembleDebug :app:cyclonedxDirectBom
 
       - name: Verify merged debug manifest and APK metadata
         run: |

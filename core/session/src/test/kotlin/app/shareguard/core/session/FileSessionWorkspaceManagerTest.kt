@@ -37,6 +37,39 @@ class FileSessionWorkspaceManagerTest {
     }
 
     @Test
+    fun `process death abandonment is purged by the next process without touching committed storage`() = runTest {
+        val root = temporaryFolder.newFolder("process-death-sessions")
+        val committedRoot = temporaryFolder.newFolder("process-death-committed")
+        val committed = File(committedRoot, "saved-result.enc").apply { writeText("COMMITTED_BYTES") }
+        val firstProcess = manager(
+            root = root,
+            now = 1_000,
+            staleAfter = 5_000,
+            sessionIds = listOf("abandoned-process"),
+        )
+        val abandoned = firstProcess.startSession().session
+        abandoned.snapshots.sealAcceptedDirectText("PROCESS_DEATH_SOURCE_CANARY")
+        val abandonedDirectory = root.listFiles()!!.single()
+        assertThat(abandonedDirectory.walkTopDown().filter(File::isFile).toList()).isNotEmpty()
+        abandonedDirectory.walkTopDown().forEach { it.setLastModified(1_000) }
+
+        // Deliberately do not call complete/discard/failFatal: this is the process-death boundary.
+        val nextProcess = manager(
+            root = root,
+            now = 10_000,
+            staleAfter = 5_000,
+            sessionIds = listOf("replacement-process"),
+        )
+        val restarted = nextProcess.startSession()
+
+        assertThat(restarted.staleCleanup).isEqualTo(CleanupReport(1, 1, 0))
+        assertThat(abandonedDirectory.exists()).isFalse()
+        assertThat(root.listFiles()!!.map { it.name }).containsExactly("session-replacement-process")
+        assertThat(committed.readText()).isEqualTo("COMMITTED_BYTES")
+        restarted.session.lifecycle.discard()
+    }
+
+    @Test
     fun `wall-clock rollback does not age or purge a future-dated workspace`() = runTest {
         val root = temporaryFolder.newFolder("rollback-sessions")
         val future = File(root, "session-future").apply { mkdir() }
