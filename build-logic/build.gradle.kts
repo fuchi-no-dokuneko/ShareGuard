@@ -5,7 +5,7 @@ plugins {
 group = "app.shareguard.buildlogic"
 
 dependencies {
-    implementation("com.android.tools.build:gradle:9.3.0")
+    implementation("com.android.tools.build:gradle:9.3.1")
 }
 
 gradlePlugin {
