@@ -50,3 +50,17 @@ Before the first public release:
    offline/data/size review and the full relevant verifier suite.
 5. Confirm R8 does not remove serializers, Room schema behavior, OCR adapters, or verification code and
    does remove unused networking/client paths.
+
+## Vulnerability exceptions
+
+CI and release builds scan the generated CycloneDX application SBOM with the
+SHA-pinned Anchore scan action and fail for every high or critical finding.
+The machine-readable Grype result is retained with the build evidence.
+
+There are currently no accepted vulnerability exceptions. Any future exception
+must be added to this table in the same pull request and reviewed before the
+gate is changed; an empty owner, rationale, or expiry is invalid.
+
+| Advisory | Component/version | Owner | Rationale | Expiry (UTC) | Compensating control |
+|---|---|---|---|---|---|
+| _None_ | | | | | |

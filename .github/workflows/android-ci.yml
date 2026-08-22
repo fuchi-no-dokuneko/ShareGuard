@@ -113,6 +113,16 @@ jobs:
             bash scripts/ci/inspect-apk.sh "$apk"
           done
 
+      - name: Reject high and critical dependency vulnerabilities
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
+        with:
+          sbom: build/reports/cyclonedx/bom.json
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: false
+          output-format: json
+          output-file: build/reports/dependency-vulnerabilities.json
+
       - name: Upload test and lint evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -128,6 +138,7 @@ jobs:
             **/build/reports/lint-results*.xml
             build/reports/cyclonedx/bom.json
             build/reports/cyclonedx/bom.xml
+            build/reports/dependency-vulnerabilities.json
 
       - name: Upload debug APK
         if: ${{ success() }}
