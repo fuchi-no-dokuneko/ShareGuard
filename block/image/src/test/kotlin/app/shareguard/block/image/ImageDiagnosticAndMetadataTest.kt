@@ -9,8 +9,10 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class ImageDiagnosticAndMetadataTest {
     @Test
     fun `disabled diagnostics are explicitly NOT_RUN and never certify absence`() {
