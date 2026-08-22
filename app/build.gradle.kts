@@ -71,7 +71,7 @@ android {
         warningsAsErrors = true
         // SDK/dependency freshness is controlled by the audited toolchain and dependency review.
         // Keep correctness/security lint strict without requiring unavailable preview SDKs.
-        disable += setOf("GradleDependency", "OldTargetApi")
+        disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "OldTargetApi")
     }
 }
 

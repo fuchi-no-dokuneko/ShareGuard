@@ -38,6 +38,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 abortOnError = true
                 checkDependencies = true
                 warningsAsErrors = true
+                disable += setOf("AndroidGradlePluginVersion")
             }
         }
     }
