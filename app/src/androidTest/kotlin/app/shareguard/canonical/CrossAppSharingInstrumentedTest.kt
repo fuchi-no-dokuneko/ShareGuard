@@ -95,10 +95,9 @@ class CrossAppSharingInstrumentedTest {
                 "${targetContext.packageName}.managed-share",
                 shareFile,
             )
-            val intent = Intent(Intent.ACTION_SEND).apply {
+            val intent = Intent(TEST_PROBE_ACTION).apply {
                 component = ComponentName(testContext.packageName, TestShareReceiverActivity::class.java.name)
-                type = "text/plain"
-                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(TestShareReceiverActivity.EXTRA_PROBE_URI, uri)
             }
 
             val result = launchReceiver(targetContext, intent)
@@ -163,5 +162,6 @@ class CrossAppSharingInstrumentedTest {
 
     private companion object {
         const val RECEIVER_TIMEOUT_SECONDS = 15L
+        const val TEST_PROBE_ACTION = "app.shareguard.canonical.test.PROBE_URI"
     }
 }

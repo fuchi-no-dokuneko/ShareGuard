@@ -20,6 +20,7 @@ public final class TestShareReceiverActivity extends Activity {
     public static final String EXTRA_WRITE_OPEN_SUCCEEDED = "test.write_open_succeeded";
     public static final String EXTRA_FAILURE_CODE = "test.failure_code";
     public static final String EXTRA_RESULT_RECEIVER = "test.result_receiver";
+    public static final String EXTRA_PROBE_URI = "test.probe_uri";
 
     @Override
     @SuppressWarnings("deprecation")
@@ -28,6 +29,11 @@ public final class TestShareReceiverActivity extends Activity {
         Uri uri = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             ? getIntent().getParcelableExtra(Intent.EXTRA_STREAM, Uri.class)
             : getIntent().getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) {
+            uri = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? getIntent().getParcelableExtra(EXTRA_PROBE_URI, Uri.class)
+                : getIntent().getParcelableExtra(EXTRA_PROBE_URI);
+        }
         if (uri == null) {
             finishWithFailure("URI_MISSING");
             return;
