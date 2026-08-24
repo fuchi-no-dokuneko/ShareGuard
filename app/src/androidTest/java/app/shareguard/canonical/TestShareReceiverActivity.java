@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
+import android.os.ResultReceiver;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -18,6 +19,7 @@ public final class TestShareReceiverActivity extends Activity {
     public static final String EXTRA_BYTE_COUNT = "test.byte_count";
     public static final String EXTRA_WRITE_OPEN_SUCCEEDED = "test.write_open_succeeded";
     public static final String EXTRA_FAILURE_CODE = "test.failure_code";
+    public static final String EXTRA_RESULT_RECEIVER = "test.result_receiver";
 
     @Override
     @SuppressWarnings("deprecation")
@@ -52,21 +54,29 @@ public final class TestShareReceiverActivity extends Activity {
             } catch (Exception ignored) {
                 // A read-only grant is the expected path.
             }
-            setResult(
+            finishWithResult(
                 RESULT_OK,
                 new Intent()
                     .putExtra(EXTRA_SHA_256, sha256(bytes))
                     .putExtra(EXTRA_BYTE_COUNT, bytes.length)
                     .putExtra(EXTRA_WRITE_OPEN_SUCCEEDED, writable)
             );
-            finish();
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
     }
 
     private void finishWithFailure(String code) {
-        setResult(RESULT_CANCELED, new Intent().putExtra(EXTRA_FAILURE_CODE, code));
+        finishWithResult(RESULT_CANCELED, new Intent().putExtra(EXTRA_FAILURE_CODE, code));
+    }
+
+    @SuppressWarnings("deprecation")
+    private void finishWithResult(int resultCode, Intent data) {
+        setResult(resultCode, data);
+        ResultReceiver receiver = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            ? getIntent().getParcelableExtra(EXTRA_RESULT_RECEIVER, ResultReceiver.class)
+            : getIntent().getParcelableExtra(EXTRA_RESULT_RECEIVER);
+        if (receiver != null) receiver.send(resultCode, data.getExtras());
         finish();
     }
 
