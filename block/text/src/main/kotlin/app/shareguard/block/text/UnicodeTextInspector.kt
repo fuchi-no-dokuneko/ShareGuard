@@ -111,7 +111,7 @@ class UnicodeTextInspector(
                 TextNormalizationForm.NFD,
                 -> false
             }
-            val compatibilityReview = compatibilityOnly && delta.before.value.codePoints().anyMatch {
+            val compatibilityReview = compatibilityOnly && delta.before.value.unicodeCodePoints().any {
                 UCharacter.isLetterOrDigit(it)
             }
             findings += taggedFinding(
@@ -492,7 +492,7 @@ class UnicodeTextInspector(
             val codePoint = if (atEnd) -1 else text.codePointAt(offset)
             if (atEnd || codePoint in LINE_TERMINATORS) {
                 val content = text.substring(lineStart, offset)
-                val indentation = content.codePoints().takeWhile {
+                val indentation = content.unicodeCodePoints().takeWhile {
                     UCharacter.isUWhiteSpace(it) && it !in LINE_TERMINATORS
                 }.count()
                 val marker = LIST_MARKER.find(content)?.value
@@ -507,7 +507,7 @@ class UnicodeTextInspector(
                     lineIndex = lineIndex++,
                     utf16Start = lineStart,
                     utf16EndExclusive = offset,
-                    indentationScalars = indentation.toInt(),
+                    indentationScalars = indentation,
                     blank = content.isBlank(),
                     listMarker = marker,
                     visualWrapTerminator = terminatorOffset in visualWrapOffsets,
@@ -535,8 +535,9 @@ class UnicodeTextInspector(
         var end = iterator.next()
         while (end != BreakIterator.DONE) {
             val token = text.substring(start, end)
-            if (token.codePoints().anyMatch { UCharacter.isLetterOrDigit(it) || it == '_'.code }) {
-                val scripts = token.codePoints().toArray()
+            val codePoints = token.unicodeCodePoints().toList()
+            if (codePoints.any { UCharacter.isLetterOrDigit(it) || it == '_'.code }) {
+                val scripts = codePoints
                     .map(::scriptForCodePoint)
                     .filter { it !in setOf(ScriptCode.COMMON, ScriptCode.INHERITED) }
                     .distinct()
@@ -723,6 +724,15 @@ class UnicodeTextInspector(
             .setChecks(SpoofChecker.ALL_CHECKS)
             .setRestrictionLevel(SpoofChecker.RestrictionLevel.MODERATELY_RESTRICTIVE)
             .build()
+    }
+}
+
+private fun String.unicodeCodePoints(): Sequence<Int> = sequence {
+    var offset = 0
+    while (offset < length) {
+        val codePoint = codePointAt(offset)
+        yield(codePoint)
+        offset += Character.charCount(codePoint)
     }
 }
 
