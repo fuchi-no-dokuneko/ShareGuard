@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -45,10 +46,8 @@ class IntentLifecycleInstrumentedTest {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, "process-private canary")
         }
-        ActivityScenario.launch<MainActivity>(incoming).use { scenario ->
-            scenario.onActivity { activity ->
-                assertEquals("process-private canary", activity.currentUiStateForTest().text)
-            }
+        withDirectActivity(incoming) { activity ->
+            assertEquals("process-private canary", activity.currentUiStateForTest().text)
         }
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -70,14 +69,12 @@ class IntentLifecycleInstrumentedTest {
             putExtra("unrelated.sender.extra", "process-private canary")
         }
 
-        ActivityScenario.launch<MainActivity>(incoming).use { scenario ->
-            scenario.onActivity { activity ->
-                assertNull(activity.intent.getStringExtra(Intent.EXTRA_TEXT))
-                assertNull(activity.intent.getStringExtra(Intent.EXTRA_HTML_TEXT))
-                assertNull(activity.intent.getStringExtra("unrelated.sender.extra"))
-                assertNull(activity.intent.type)
-                assertNull(activity.intent.clipData)
-            }
+        withDirectActivity(incoming) { activity ->
+            assertNull(activity.intent.getStringExtra(Intent.EXTRA_TEXT))
+            assertNull(activity.intent.getStringExtra(Intent.EXTRA_HTML_TEXT))
+            assertNull(activity.intent.getStringExtra("unrelated.sender.extra"))
+            assertNull(activity.intent.type)
+            assertNull(activity.intent.clipData)
         }
     }
 
@@ -91,12 +88,10 @@ class IntentLifecycleInstrumentedTest {
             putExtra(Intent.EXTRA_STREAM, Uri.parse("content://sender.example/source/1"))
         }
 
-        ActivityScenario.launch<MainActivity>(incoming).use { scenario ->
-            scenario.onActivity { activity ->
-                assertEquals(AppRoute.SOURCE_CHOICE, activity.currentUiStateForTest().route)
-                assertNull(activity.intent.getStringExtra(Intent.EXTRA_TEXT))
-                assertFalse(activity.intent.hasExtra(Intent.EXTRA_STREAM))
-            }
+        withDirectActivity(incoming) { activity ->
+            assertEquals(AppRoute.SOURCE_CHOICE, activity.currentUiStateForTest().route)
+            assertNull(activity.intent.getStringExtra(Intent.EXTRA_TEXT))
+            assertFalse(activity.intent.hasExtra(Intent.EXTRA_STREAM))
         }
     }
 
@@ -135,6 +130,18 @@ class IntentLifecycleInstrumentedTest {
                     application.container.deletionService.delete(app.shareguard.core.model.SavedResultId(id))
                 }
             }
+        }
+    }
+
+    private fun withDirectActivity(intent: Intent, assertions: (MainActivity) -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val activity = instrumentation.startActivitySync(intent) as MainActivity
+        try {
+            instrumentation.runOnMainSync { assertions(activity) }
+        } finally {
+            instrumentation.runOnMainSync { activity.finishAndRemoveTask() }
+            instrumentation.waitForIdleSync()
         }
     }
 }
