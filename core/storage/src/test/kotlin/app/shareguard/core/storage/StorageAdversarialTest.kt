@@ -189,6 +189,25 @@ class StorageAdversarialTest {
     }
 
     @Test
+    fun integritySweepDoesNotCountAnEmptyStagingDirectoryAsAnotherTransaction() = runTest {
+        StorageTestFixture().use { fixture ->
+            val id = fixture.persistText().savedResult.savedResultId
+            val stagingDirectory = File(fixture.layout.stagingRoot, id.value)
+            assertThat(stagingDirectory.isDirectory).isTrue()
+            assertThat(stagingDirectory.listFiles().orEmpty()).isEmpty()
+
+            val report = PersistentStoreIntegritySweep(
+                repository = fixture.repository,
+                revalidator = fixture.revalidator,
+                deletionService = SavedResultDeletionService(fixture.repository),
+            ).run()
+
+            assertThat(report.incompleteTransactionsFound).isEqualTo(0)
+            assertThat(stagingDirectory.exists()).isFalse()
+        }
+    }
+
+    @Test
     fun sourceUriFilenameOcrAndSessionPathCanariesNeverEnterPersistentMetadataOrFiles() = runTest {
         StorageTestFixture().use { fixture ->
             fixture.persistText("approved final words")

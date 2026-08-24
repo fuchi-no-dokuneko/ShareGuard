@@ -122,7 +122,7 @@ class PersistentStoreIntegritySweep(
             }
         }
         repository.layout.stagingRoot.listFiles().orEmpty().forEach { candidate ->
-            incomplete += 1
+            if (inventoryLeaves(candidate).isNotEmpty()) incomplete += 1
             if (deleteTreeLogically(candidate, repository.layout.stagingRoot)) {
                 orphanGroups += 1
                 reasons += "ORPHAN_STAGING_GROUP_REMOVED"
