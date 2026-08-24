@@ -87,10 +87,14 @@ class SavedResultPlatformInstrumentedTest {
                 }
                 scenario.onActivity { it.confirmDeletionForTest() }
                 waitUntil(UI_TIMEOUT_MILLIS) {
-                    runBlocking { ids.all { application.container.repository.findVisible(SavedResultId(it)) == null } }
-                }
-                scenario.onActivity { activity ->
-                    assertTrue(activity.currentUiStateForTest().savedItems.none { it.id in ids })
+                    val deleted = runBlocking {
+                        ids.all { application.container.repository.findVisible(SavedResultId(it)) == null }
+                    }
+                    var absentFromUi = false
+                    scenario.onActivity { activity ->
+                        absentFromUi = activity.currentUiStateForTest().savedItems.none { it.id in ids }
+                    }
+                    deleted && absentFromUi
                 }
             }
         } finally {

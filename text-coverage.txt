@@ -3,3 +3,4 @@ acceptance/features: Home, text, image, review, workflow, verification, saved-re
 core/security: In-memory keys are tested; Android Keystore nonce generation is exercised by release instrumentation, not mocked.
 Android test modules: AndroidJUnitRunner packaging is validated by test-APK assembly; device behavior is exercised in the API 23 and API 36 release lanes.
 app: Test receiver compatibility and mutable/immutable bitmap cleanup are exercised by connected Android release tests; platform behavior is not mocked.
+app/androidTest: Standalone receiver runtime, persisted fixture cleanup, and deletion UI synchronization are tested on API 23 and API 36; no app services are mocked.
