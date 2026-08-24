@@ -40,6 +40,24 @@ class AesGcmAuthenticatedEncryptionTest {
     }
 
     @Test
+    fun `provider generated nonce round trips without a caller supplied iv`() {
+        val delegate = provider()
+        val provider = object : AesGcmKeyProvider by delegate {
+            override val requiresProviderGeneratedNonce: Boolean = true
+        }
+        val encryption = AesGcmAuthenticatedEncryption(
+            provider,
+            NonceGenerator { error("caller nonce must not be requested") },
+        )
+
+        val envelope = encryption.encrypt(alias, "provider nonce".encodeToByteArray())
+
+        assertThat(envelope.nonceSize).isEqualTo(AuthenticatedCiphertext.NONCE_BYTES)
+        assertThat(encryption.decrypt(alias, envelope).decodeToString()).isEqualTo("provider nonce")
+        provider.close()
+    }
+
+    @Test
     fun `ciphertext mutation is rejected without returning partial plaintext`() {
         val provider = provider()
         val encryption = AesGcmAuthenticatedEncryption(provider, IncrementingNonceGenerator())

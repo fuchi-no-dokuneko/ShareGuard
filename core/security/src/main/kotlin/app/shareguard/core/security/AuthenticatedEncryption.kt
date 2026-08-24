@@ -30,6 +30,10 @@ enum class LogicalKeyDeletionResult {
  * therefore keep material outside the application process, while JVM tests can use an in-memory provider.
  */
 interface AesGcmKeyProvider : AutoCloseable {
+    /** Android Keystore rejects caller-provided IVs when randomized encryption is required. */
+    val requiresProviderGeneratedNonce: Boolean
+        get() = false
+
     fun getOrCreate(alias: KeyAlias): SecretKey
     fun get(alias: KeyAlias): SecretKey?
 
@@ -128,15 +132,24 @@ class AesGcmAuthenticatedEncryption(
         plaintext: ByteArray,
         associatedData: ByteArray,
     ): AuthenticatedCiphertext {
-        val nonce = nonceGenerator.generate(AuthenticatedCiphertext.NONCE_BYTES)
-        require(nonce.size == AuthenticatedCiphertext.NONCE_BYTES) { "Nonce generator returned the wrong size" }
+        var nonce: ByteArray? = null
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(
-                Cipher.ENCRYPT_MODE,
-                keyProvider.getOrCreate(alias),
-                GCMParameterSpec(TAG_BITS, nonce),
-            )
+            val key = keyProvider.getOrCreate(alias)
+            nonce = if (keyProvider.requiresProviderGeneratedNonce) {
+                cipher.init(Cipher.ENCRYPT_MODE, key)
+                cipher.iv.copyOf()
+            } else {
+                nonceGenerator.generate(AuthenticatedCiphertext.NONCE_BYTES).also { generated ->
+                    require(generated.size == AuthenticatedCiphertext.NONCE_BYTES) {
+                        "Nonce generator returned the wrong size"
+                    }
+                    cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, generated))
+                }
+            }
+            require(nonce.size == AuthenticatedCiphertext.NONCE_BYTES) {
+                "Cipher returned the wrong nonce size"
+            }
             if (associatedData.isNotEmpty()) cipher.updateAAD(associatedData)
             val encrypted = cipher.doFinal(plaintext)
             try {
@@ -147,7 +160,7 @@ class AesGcmAuthenticatedEncryption(
         } catch (exception: GeneralSecurityException) {
             throw CryptographicOperationException()
         } finally {
-            nonce.fill(0)
+            nonce?.fill(0)
         }
     }
 

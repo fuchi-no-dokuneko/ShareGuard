@@ -9,6 +9,8 @@ import javax.crypto.SecretKey
 
 /** AES-GCM key provider backed by Android Keystore. Key bytes are never requested or exported. */
 class AndroidKeystoreAesGcmKeyProvider : AesGcmKeyProvider {
+    override val requiresProviderGeneratedNonce: Boolean = true
+
     private val lock = Any()
     private val keyStore: KeyStore by lazy {
         try {
