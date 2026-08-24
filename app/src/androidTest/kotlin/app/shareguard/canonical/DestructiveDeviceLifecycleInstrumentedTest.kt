@@ -6,6 +6,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import app.shareguard.core.model.DisplayLabel
 import app.shareguard.core.model.ImportClockConfidence
 import app.shareguard.core.model.SavedResultId
 import app.shareguard.core.session.AdvisoryImportTimer
@@ -29,34 +30,45 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DestructiveDeviceLifecycleInstrumentedTest {
     @Test
-    fun seedBeforeReboot() {
+    fun seedBeforeReboot() = runBlocking {
         val application = ApplicationProvider.getApplicationContext<ShareGuardApplication>()
         val preferences = application.getSharedPreferences(PROBE_PREFERENCES, Context.MODE_PRIVATE)
         preferences.getString(KEY_SAVED_RESULT_ID, null)?.let { staleId ->
-            runBlocking { application.container.deletionService.delete(SavedResultId(staleId)) }
+            application.container.deletionService.delete(SavedResultId(staleId))
         }
         preferences.edit().clear().commit()
 
-        var savedResultId: String? = null
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { activity ->
-                activity.runCanonicalTextWorkflowForTest("approved reboot lifecycle probe")
-            }
-            val deadline = SystemClock.elapsedRealtime() + WORKFLOW_TIMEOUT_MILLIS
-            while (SystemClock.elapsedRealtime() < deadline) {
-                scenario.onActivity { activity ->
-                    savedResultId = activity.currentUiStateForTest().result?.savedResultId
-                }
-                if (savedResultId != null) break
-                SystemClock.sleep(POLL_MILLIS)
-            }
+        require(application.container.awaitStartupMaintenance()) { "REBOOT_PROBE_STARTUP_MAINTENANCE_FAILED" }
+        val sourceText = "approved reboot lifecycle probe"
+        val session = application.container.sessionWorkspaceManager.startSession().session
+        val savedResultId = try {
+            val snapshot = session.snapshots.sealAcceptedDirectText(sourceText)
+            val workflow = CanonicalTextWorkflow(
+                application,
+                application.container.repository,
+                cleanupEvidence = application.container::awaitStartupMaintenance,
+            )
+            val review = workflow.inspect(sourceText)
+            val approved = workflow.approve(review, allReviewItemsApproved = !review.requiresReview)
+            val completion = workflow.verifyAndPersist(
+                session = session,
+                sourceHandle = snapshot.descriptor.sourceHandle,
+                importAnchor = snapshot.descriptor.importAnchor,
+                plan = approved,
+                displayLabel = DisplayLabel("Reboot lifecycle probe"),
+                semanticDiffApproved = true,
+                assuranceConsequenceApproved = true,
+            )
+            requireNotNull(completion.persisted) { "REBOOT_PROBE_PERSISTENCE_BLOCKED" }
+                .savedResult.savedResultId.value
+        } finally {
+            session.lifecycle.complete()
         }
 
-        val id = requireNotNull(savedResultId) { "REBOOT_PROBE_PERSISTENCE_TIMEOUT" }
-        val persisted = runBlocking { application.container.repository.findVisible(SavedResultId(id)) }
+        val persisted = application.container.repository.findVisible(SavedResultId(savedResultId))
         assertNotNull("seeded result was not durably visible before reboot", persisted)
         assertNotNull("seeded import did not retain its boot-scoped monotonic anchor", persisted?.importAnchor?.monotonic)
-        assertTrue(preferences.edit().putString(KEY_SAVED_RESULT_ID, id).commit())
+        assertTrue(preferences.edit().putString(KEY_SAVED_RESULT_ID, savedResultId).commit())
     }
 
     @Test
@@ -120,7 +132,6 @@ class DestructiveDeviceLifecycleInstrumentedTest {
     private companion object {
         const val PROBE_PREFERENCES = "destructive-lifecycle-probe-v1"
         const val KEY_SAVED_RESULT_ID = "saved_result_id"
-        const val WORKFLOW_TIMEOUT_MILLIS = 45_000L
         const val RESTORE_TIMEOUT_MILLIS = 15_000L
         const val POLL_MILLIS = 100L
     }
