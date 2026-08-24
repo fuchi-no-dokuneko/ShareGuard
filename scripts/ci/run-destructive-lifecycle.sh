@@ -17,24 +17,6 @@ process_probe='app.shareguard.canonical.ProcessDeathPersistenceInstrumentedTest'
 reboot_probe='app.shareguard.canonical.DestructiveDeviceLifecycleInstrumentedTest'
 mkdir -p app/build/outputs/destructive-lifecycle
 
-set +e
-adb shell am instrument -w -r \
-  -e class "${process_probe}#dieImmediatelyAfterMetadataCommit" \
-  "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-seed.txt
-process_seed_status=${PIPESTATUS[0]}
-set -e
-if grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-seed.txt; then
-  echo "The process-death seed returned normally instead of dying at the checkpoint." >&2
-  exit 1
-fi
-printf 'instrumentation_exit=%s\n' "${process_seed_status}" \
-  >> app/build/outputs/destructive-lifecycle/process-death-seed.txt
-
-adb shell am instrument -w -r \
-  -e class "${process_probe}#freshProcessQuarantinesTheInterruptedCommitAndPurgesItsTransientSource" \
-  "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-verify.txt
-grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-verify.txt
-
 adb shell am instrument -w -r \
   -e class "${reboot_probe}#seedBeforeReboot" \
   "${runner}" | tee app/build/outputs/destructive-lifecycle/reboot-seed.txt
@@ -62,3 +44,21 @@ adb shell am instrument -w -r \
   -e class "${reboot_probe}#verifyAfterReboot" \
   "${runner}" | tee app/build/outputs/destructive-lifecycle/reboot-verify.txt
 grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/reboot-verify.txt
+
+set +e
+adb shell am instrument -w -r \
+  -e class "${process_probe}#dieImmediatelyAfterMetadataCommit" \
+  "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-seed.txt
+process_seed_status=${PIPESTATUS[0]}
+set -e
+if grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-seed.txt; then
+  echo "The process-death seed returned normally instead of dying at the checkpoint." >&2
+  exit 1
+fi
+printf 'instrumentation_exit=%s\n' "${process_seed_status}" \
+  >> app/build/outputs/destructive-lifecycle/process-death-seed.txt
+
+adb shell am instrument -w -r \
+  -e class "${process_probe}#freshProcessQuarantinesTheInterruptedCommitAndPurgesItsTransientSource" \
+  "${runner}" | tee app/build/outputs/destructive-lifecycle/process-death-verify.txt
+grep -Eq '^OK \(1 test\)$' app/build/outputs/destructive-lifecycle/process-death-verify.txt
