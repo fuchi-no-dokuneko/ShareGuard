@@ -63,6 +63,13 @@ python3 scripts/ci/verify-sbom.py \
 Device-backed tests run on API 23 and API 36 managed emulators in GitHub Actions. The local project does
 not require `adb` for unit, lint, compile, APK or bundle verification.
 
+## Human and agent acceptance
+
+The three executable Gherkin pipelines under [`acceptance/`](acceptance/README.md) provide granular
+daily Android UAT plus timed English and Cantonese product-introduction recordings. Run each pipeline
+with `--dry-run` to validate all bindings without a device; a real pass requires every scenario on one
+authorized ADB device.
+
 ## Repository layout
 
 - `core/model` — immutable domain, lineage, verification and Saved Result models

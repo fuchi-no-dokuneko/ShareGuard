@@ -1,0 +1,5 @@
+{
+  "name": "Canonical Share",
+  "package": "app.shareguard.canonical.debug",
+  "activity": "app.shareguard.canonical.debug/app.shareguard.canonical.MainActivity"
+}
