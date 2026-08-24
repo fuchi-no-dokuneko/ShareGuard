@@ -37,18 +37,28 @@ jobs:
   connected-tests:
     name: connectedDebugAndroidTest (API ${{ matrix.api-level }})
     needs: wrapper-validation
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - api-level: 23
             target: default
-            arch: x86_64
+            arch: x86
+            runner: ubuntu-22.04
+            profile: Galaxy Nexus
+            ram_size: 2048M
+            heap_size: 512M
+            disk_size: 2048M
           - api-level: 36
             target: google_apis
             arch: x86_64
+            runner: ubuntu-24.04
+            profile: pixel_6
+            ram_size: 4096M
+            heap_size: 1024M
+            disk_size: 4096M
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -96,15 +106,16 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
-          profile: pixel_6
+          profile: ${{ matrix.profile }}
           channel: stable
           cores: 2
-          ram-size: 4096M
-          heap-size: 1024M
-          disk-size: 4096M
+          ram-size: ${{ matrix.ram_size }}
+          heap-size: ${{ matrix.heap_size }}
+          disk-size: ${{ matrix.disk_size }}
+          emulator-boot-timeout: 300
           disable-animations: true
           emulator-options: >-
-            -no-window -noaudio -no-boot-anim
+            -no-window -noaudio -no-boot-anim -no-snapshot
             -gpu swiftshader_indirect
             -camera-back none -camera-front none
           script: bash scripts/ci/run-connected-instrumentation.sh
