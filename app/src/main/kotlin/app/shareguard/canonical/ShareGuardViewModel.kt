@@ -1459,27 +1459,23 @@ class ShareGuardViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun clearTransientPreview() {
-        _state.value.transientImagePreview?.let { bitmap ->
-            if (!bitmap.isRecycled) {
-                bitmap.eraseColor(0)
-                bitmap.recycle()
-            }
-        }
+        _state.value.transientImagePreview?.releasePreview()
         if (_state.value.transientImagePreview != null) {
             _state.value = _state.value.copy(transientImagePreview = null)
         }
     }
 
     private fun clearResultPreview() {
-        _state.value.exactResultImagePreview?.let { bitmap ->
-            if (!bitmap.isRecycled) {
-                bitmap.eraseColor(0)
-                bitmap.recycle()
-            }
-        }
+        _state.value.exactResultImagePreview?.releasePreview()
         if (_state.value.exactResultImagePreview != null) {
             _state.value = _state.value.copy(exactResultImagePreview = null)
         }
+    }
+
+    private fun android.graphics.Bitmap.releasePreview() {
+        if (isRecycled) return
+        if (isMutable) eraseColor(0)
+        recycle()
     }
 
     override fun onCleared() {
