@@ -4,3 +4,5 @@ core/security: In-memory keys are tested; Android Keystore nonce generation is e
 Android test modules: AndroidJUnitRunner packaging is validated by test-APK assembly; device behavior is exercised in the API 23 and API 36 release lanes.
 app: Test receiver compatibility and mutable/immutable bitmap cleanup are exercised by connected Android release tests; platform behavior is not mocked.
 app/androidTest: Standalone receiver runtime, persisted fixture cleanup, and deletion UI synchronization are tested on API 23 and API 36; no app services are mocked.
+app/androidTest sharing: Cross-package URI grants use a platform result callback and connected tests; neither provider permissions nor receiver execution are mocked.
+feature/saved accessibility: Saved-result cards expose focus semantics and connected Compose tests verify actual focus; UI focus handling is not mocked.

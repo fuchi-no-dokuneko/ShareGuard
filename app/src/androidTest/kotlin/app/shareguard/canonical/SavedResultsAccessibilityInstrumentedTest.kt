@@ -40,6 +40,11 @@ class SavedResultsAccessibilityInstrumentedTest {
             val elapsedNode = composeRule.onNode(naturalElapsedDescription)
             elapsedNode.assertExists()
             elapsedNode.performSemanticsAction(SemanticsActions.RequestFocus) { requestFocus -> requestFocus() }
+            composeRule.waitForIdle()
+            composeRule.waitUntil(UI_TIMEOUT_MILLIS) {
+                elapsedNode.fetchSemanticsNode().config
+                    .getOrNull(SemanticsProperties.Focused) == true
+            }
             elapsedNode.assertIsFocused()
         } finally {
             id?.let { savedId ->

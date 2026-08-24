@@ -1,6 +1,7 @@
 package app.shareguard.feature.saved
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -184,7 +185,7 @@ private fun SavedResultCard(
 ) {
     Card(
         onClick = onOpen,
-        modifier = Modifier.fillMaxWidth().semantics {
+        modifier = Modifier.fillMaxWidth().focusable().semantics {
             contentDescription = "${item.displayLabel}, ${item.outputMode.name.lowercase().replace('_', ' ')}, " +
                 "${ClaimLanguage.assuranceLabel(item.assuranceClass)}, time since import ${item.elapsedSinceImport}"
         },
