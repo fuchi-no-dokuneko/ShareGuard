@@ -159,6 +159,25 @@ class TextCorpusTest {
     }
 
     @Test
+    fun supplementaryCompatibilityLetter_usesScalarBoundaries() {
+        val source = "\u2003\uD835\uDC00lpha"
+        val inspection = UnicodeTextInspector().inspect(TextProcessingInput.create(source))
+
+        assertThat(inspection.scalarInventory.map { it.codePoint }).containsExactly(
+            0x2003,
+            0x1D400,
+            'l'.code,
+            'p'.code,
+            'h'.code,
+            'a'.code,
+        ).inOrder()
+        assertThat(inspection.lineStructure.single().indentationScalars).isEqualTo(1)
+        assertThat(inspection.reviewGates.map { it.code })
+            .contains(TextReviewCode.COMPATIBILITY_NORMALIZATION_REVIEW)
+        assertThat(inspection.tokens).isNotEmpty()
+    }
+
+    @Test
     fun inspection_recordsAllNormalizationFormsAndLineStructure() {
         val input = TextProcessingInput.create("  1. Café\r\n\r\nnext")
         val inspection = UnicodeTextInspector().inspect(input)

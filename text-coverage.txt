@@ -8,3 +8,4 @@ app/androidTest sharing: Cross-package URI grants use a platform result callback
 feature/saved accessibility: Saved-result cards expose focus semantics and connected Compose tests verify actual focus; UI focus handling is not mocked.
 app/androidTest intent lifecycle: Sanitized share intents use direct platform launches while default lifecycle uses ActivityScenario; Android lifecycle and intent handling are not mocked.
 CI emulator matrix: API 23 uses the upstream-tested 32-bit legacy runner profile; API 36 retains the modern profile. Both execute the same unmocked instrumentation suite.
+block/text API 23: UTF-16 scalar traversal is unit-tested with a supplementary compatibility letter; API 23 instrumentation exercises the same implementation without mocks.
