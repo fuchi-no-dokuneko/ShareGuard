@@ -22,4 +22,5 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.okhttp)
     androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

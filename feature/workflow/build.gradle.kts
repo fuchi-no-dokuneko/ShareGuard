@@ -22,5 +22,6 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)
     androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.compose.ui.test.junit4)
 }

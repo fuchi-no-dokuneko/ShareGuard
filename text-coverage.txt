@@ -1,2 +1,4 @@
 acceptance/harness.py: Custom Gherkin parsing, unique binding validation, ADB orchestration, recording hooks, screenshots, checklist, and Sonar XML are tested by dry execution; Android product modules are not mocked.
 acceptance/features: Home, text, image, review, workflow, verification, saved-result, settings, share, export, deletion, persistence, and privacy modules are specified; real Android execution requires an authorized device.
+core/security: In-memory keys are tested; Android Keystore nonce generation is exercised by release instrumentation, not mocked.
+Android test modules: AndroidJUnitRunner packaging is validated by test-APK assembly; device behavior is exercised in the API 23 and API 36 release lanes.
