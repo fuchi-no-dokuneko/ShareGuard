@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.shareguard.core.model.OutputMode
+import app.shareguard.core.model.SavedResultId
 import java.io.FileInputStream
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -37,21 +38,30 @@ class ReleasePrivacyEvidenceInstrumentedTest {
 
         clearDeviceLog()
         val canary = "SHAREGUARD_LOG_CANARY_${UUID.randomUUID().toString().replace("-", "")}" 
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { it.runCanonicalTextWorkflowForTest(canary) }
-            val deadline = SystemClock.elapsedRealtime() + 45_000L
-            var state: ShareGuardUiState? = null
-            while (SystemClock.elapsedRealtime() < deadline) {
-                scenario.onActivity { state = it.currentUiStateForTest() }
-                if (state?.route in setOf(AppRoute.RESULT, AppRoute.ERROR)) break
-                SystemClock.sleep(100L)
+        var savedResultId: String? = null
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { it.runCanonicalTextWorkflowForTest(canary) }
+                val deadline = SystemClock.elapsedRealtime() + 45_000L
+                var state: ShareGuardUiState? = null
+                while (SystemClock.elapsedRealtime() < deadline) {
+                    scenario.onActivity { state = it.currentUiStateForTest() }
+                    if (state?.route in setOf(AppRoute.RESULT, AppRoute.ERROR)) break
+                    SystemClock.sleep(100L)
+                }
+                assertEquals(state?.errorCode ?: "workflow did not complete", AppRoute.RESULT, state?.route)
+                savedResultId = state?.result?.savedResultId
+                assertNotNull(savedResultId)
             }
-            assertEquals(state?.errorCode ?: "workflow did not complete", AppRoute.RESULT, state?.route)
-            assertNotNull(state?.result?.savedResultId)
-        }
 
-        val logs = readDeviceLog()
-        assertTrue("source canary appeared in device logs", !logs.contains(canary))
+            val logs = readDeviceLog()
+            assertTrue("source canary appeared in device logs", !logs.contains(canary))
+        } finally {
+            savedResultId?.let { id ->
+                val application = ApplicationProvider.getApplicationContext<ShareGuardApplication>()
+                runBlocking { application.container.deletionService.delete(SavedResultId(id)) }
+            }
+        }
     }
 
     @Test
@@ -94,32 +104,42 @@ class ReleasePrivacyEvidenceInstrumentedTest {
     @Test
     fun rebuiltImageUsesActualAndroidRendererWithoutStructuralOrPixelLineageBlockers() {
         assertTrue(BuildConfig.RELEASE_PRIVACY_EVIDENCE)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity {
-                it.runCanonicalTextWorkflowForTest(
-                    "Readable canonical image",
-                    OutputMode.REBUILT_IMAGE,
+        var savedResultId: String? = null
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    it.runCanonicalTextWorkflowForTest(
+                        "Readable canonical image",
+                        OutputMode.REBUILT_IMAGE,
+                    )
+                }
+                val deadline = SystemClock.elapsedRealtime() + 45_000L
+                var state: ShareGuardUiState? = null
+                while (SystemClock.elapsedRealtime() < deadline) {
+                    scenario.onActivity { state = it.currentUiStateForTest() }
+                    if (state?.route in setOf(AppRoute.RESULT, AppRoute.ERROR)) break
+                    SystemClock.sleep(100L)
+                }
+                assertEquals(state?.errorCode ?: "workflow did not complete", AppRoute.RESULT, state?.route)
+                savedResultId = state?.result?.savedResultId
+                assertNotNull(savedResultId)
+                assertNotNull(state?.exactResultImagePreview)
+                assertTrue(
+                    "structural or source-pixel verification unexpectedly blocked",
+                    state?.result?.blockingChecks.orEmpty().none {
+                        it in setOf(
+                            "EXECUTED_BLOCK_MANIFEST",
+                            "CANONICAL_REVISION_LINK",
+                            "SOURCE_PIXEL_DEPENDENCY",
+                        )
+                    },
                 )
             }
-            val deadline = SystemClock.elapsedRealtime() + 45_000L
-            var state: ShareGuardUiState? = null
-            while (SystemClock.elapsedRealtime() < deadline) {
-                scenario.onActivity { state = it.currentUiStateForTest() }
-                if (state?.route in setOf(AppRoute.RESULT, AppRoute.ERROR)) break
-                SystemClock.sleep(100L)
+        } finally {
+            savedResultId?.let { id ->
+                val application = ApplicationProvider.getApplicationContext<ShareGuardApplication>()
+                runBlocking { application.container.deletionService.delete(SavedResultId(id)) }
             }
-            assertEquals(state?.errorCode ?: "workflow did not complete", AppRoute.RESULT, state?.route)
-            assertNotNull(state?.exactResultImagePreview)
-            assertTrue(
-                "structural or source-pixel verification unexpectedly blocked",
-                state?.result?.blockingChecks.orEmpty().none {
-                    it in setOf(
-                        "EXECUTED_BLOCK_MANIFEST",
-                        "CANONICAL_REVISION_LINK",
-                        "SOURCE_PIXEL_DEPENDENCY",
-                    )
-                },
-            )
         }
     }
 
