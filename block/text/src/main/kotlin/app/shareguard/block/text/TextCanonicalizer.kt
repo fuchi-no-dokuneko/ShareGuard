@@ -216,7 +216,9 @@ class TextCanonicalizer(
             canonicalizePunctuation(segment.value, policy.punctuationProfile, punctuationGate != null)
         }
 
-        val canonicalText = segments.joinToString(separator = "") { it.value }
+        val canonicalText = buildString {
+            for (segment in segments) append(segment.value)
+        }
         val unresolvedGates = gates.filter { it.blocking && it.status != ReviewStatus.APPROVED }
         val failures = inspection.failures.toMutableList()
         unresolvedGates.forEach { gate ->
@@ -232,8 +234,9 @@ class TextCanonicalizer(
             null
         }
         val changedFindingIds = ledger.flatMap { entry -> entry.reviewLink?.findingIds.orEmpty() }.toSet()
-        allFindings.replaceAll { finding ->
-            when {
+        for (index in allFindings.indices) {
+            val finding = allFindings[index]
+            allFindings[index] = when {
                 finding.findingId in changedFindingIds -> finding.copy(status = FindingStatus.CHANGED)
                 gates.any { it.status == ReviewStatus.APPROVED && finding.findingId in it.findingIds } -> {
                     finding.copy(status = FindingStatus.ACCEPTED)
